@@ -1,0 +1,13 @@
+/.cache/
+/bin/
+/dist/
+/docs/
+/build/downloads/*
+/build/php-src/*
+/build/php-prefixes/*
+/php-*/
+/php-*.tar.*
+/smoke/**/.env
+!/build/downloads/.gitkeep
+!/build/php-src/.gitkeep
+!/build/php-prefixes/.gitkeep

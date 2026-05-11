@@ -1,0 +1,25 @@
+[{{POOL_NAME}}]
+user = {{USER}}
+group = {{GROUP}}
+
+listen = {{SOCKET_PATH}}
+listen.owner = {{USER}}
+listen.group = {{GROUP}}
+listen.mode = 0660
+
+pm = dynamic
+pm.max_children = 10
+pm.start_servers = 2
+pm.min_spare_servers = 1
+pm.max_spare_servers = 3
+
+catch_workers_output = yes
+decorate_workers_output = no
+
+php_admin_value[error_log] = {{PHP_ERROR_LOG}}
+php_admin_flag[log_errors] = on
+
+php_value[session.save_path] = {{SESSION_DIR}}
+
+{{BEFORE_SNIPPETS}}
+{{AFTER_SNIPPETS}}

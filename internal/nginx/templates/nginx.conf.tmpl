@@ -1,0 +1,27 @@
+worker_processes auto;
+pid {{PID_PATH}};
+error_log {{ERROR_LOG}};
+
+events {
+    worker_connections 1024;
+}
+
+http {
+    include {{MIME_TYPES}};
+    default_type application/octet-stream;
+
+    access_log {{ACCESS_LOG}};
+    sendfile on;
+    keepalive_timeout 65;
+    server_tokens off;
+
+    client_body_temp_path {{TEMP_DIR}}/client-body;
+    proxy_temp_path {{TEMP_DIR}}/proxy;
+    fastcgi_temp_path {{TEMP_DIR}}/fastcgi;
+    uwsgi_temp_path {{TEMP_DIR}}/uwsgi;
+    scgi_temp_path {{TEMP_DIR}}/scgi;
+
+    types_hash_max_size 4096;
+
+    include {{SITES_DIR}}/*.conf;
+}

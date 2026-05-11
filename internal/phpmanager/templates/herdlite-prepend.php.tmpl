@@ -1,0 +1,114 @@
+<?php
+
+declare(strict_types=1);
+
+if (PHP_SAPI === 'cli' && isset($_SERVER['argv'][0]) && str_contains((string) $_SERVER['argv'][0], 'composer')) {
+    return;
+}
+
+$root = herdlite_project_root();
+if ($root === null) {
+    return;
+}
+
+$autoload = $root . '/vendor/autoload.php';
+if (!is_file($autoload)) {
+    return;
+}
+
+require_once $autoload;
+
+if (!class_exists(\Symfony\Component\VarDumper\VarDumper::class)
+    || !class_exists(\Symfony\Component\VarDumper\Cloner\VarCloner::class)
+    || !class_exists(\Symfony\Component\VarDumper\Dumper\HtmlDumper::class)) {
+    return;
+}
+
+\Symfony\Component\VarDumper\VarDumper::setHandler(static function (mixed $value) use ($root): ?string {
+    $cloner = new \Symfony\Component\VarDumper\Cloner\VarCloner();
+    $dumper = new \Symfony\Component\VarDumper\Dumper\HtmlDumper();
+    $html = $dumper->dump($cloner->cloneVar($value), true);
+
+    herdlite_post_dump([
+        'project_path' => $root,
+        'project_name' => basename($root),
+        'sapi' => PHP_SAPI,
+        'uri' => $_SERVER['REQUEST_URI'] ?? '',
+        'command' => isset($_SERVER['argv']) ? implode(' ', array_map('strval', $_SERVER['argv'])) : '',
+        'file' => herdlite_dump_file(),
+        'html' => $html,
+    ]);
+
+    return null;
+});
+
+function herdlite_project_root(): ?string
+{
+    $candidates = [];
+
+    if (isset($_SERVER['SCRIPT_FILENAME'])) {
+        $script = (string) $_SERVER['SCRIPT_FILENAME'];
+        if (str_ends_with($script, '/public/index.php')) {
+            $candidates[] = dirname($script, 2);
+        }
+        $candidates[] = dirname($script);
+    }
+
+    $cwd = getcwd();
+    if (is_string($cwd) && $cwd !== '') {
+        $candidates[] = $cwd;
+    }
+
+    foreach ($candidates as $candidate) {
+        $candidate = realpath($candidate);
+        if ($candidate === false) {
+            continue;
+        }
+        $current = $candidate;
+        while ($current !== dirname($current)) {
+            if (is_file($current . '/vendor/autoload.php') && is_file($current . '/artisan')) {
+                return $current;
+            }
+            $current = dirname($current);
+        }
+    }
+
+    return null;
+}
+
+function herdlite_dump_file(): string
+{
+    foreach (debug_backtrace(DEBUG_BACKTRACE_IGNORE_ARGS) as $frame) {
+        $file = (string) ($frame['file'] ?? '');
+        if ($file === '' || str_contains($file, '/vendor/')) {
+            continue;
+        }
+        if (str_contains($file, '/php-runtime/prepend.php')) {
+            continue;
+        }
+        $line = isset($frame['line']) ? ':' . (string) $frame['line'] : '';
+        return $file . $line;
+    }
+
+    return '';
+}
+
+function herdlite_post_dump(array $payload): void
+{
+    $json = json_encode($payload, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
+    if (!is_string($json)) {
+        return;
+    }
+
+    $context = stream_context_create([
+        'http' => [
+            'method' => 'POST',
+            'header' => "Content-Type: application/json\r\n",
+            'content' => $json,
+            'timeout' => 0.2,
+            'ignore_errors' => true,
+        ],
+    ]);
+
+    @file_get_contents('http://127.0.0.1:7391/api/dumps', false, $context);
+}

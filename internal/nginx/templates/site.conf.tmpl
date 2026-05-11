@@ -1,0 +1,47 @@
+server {
+    listen 80;
+    listen [::]:80;
+    server_name {{DOMAIN}};
+
+    return 301 https://$host$request_uri;
+}
+
+server {
+    listen 443 ssl;
+    listen [::]:443 ssl;
+    server_name {{DOMAIN}};
+    root {{PUBLIC_ROOT}};
+
+    ssl_certificate {{CERT_PATH}};
+    ssl_certificate_key {{KEY_PATH}};
+
+    add_header X-Frame-Options "SAMEORIGIN";
+    add_header X-Content-Type-Options "nosniff";
+
+    index index.php;
+    charset utf-8;
+
+    location ~ ^/livewire-[A-Za-z0-9_-]+/ {
+        try_files $uri $uri/ /index.php?$query_string;
+    }
+
+    location / {
+        try_files $uri $uri/ /index.php?$query_string;
+    }
+
+    location = /favicon.ico { access_log off; log_not_found off; }
+    location = /robots.txt  { access_log off; log_not_found off; }
+
+    error_page 404 /index.php;
+
+    location ~ ^/index\.php(/|$) {
+        fastcgi_pass unix:{{PHP_FPM_SOCKET}};
+        fastcgi_param SCRIPT_FILENAME $realpath_root$fastcgi_script_name;
+        include {{FASTCGI_PARAMS}};
+        fastcgi_hide_header X-Powered-By;
+    }
+
+    location ~ /\.(?!well-known).* {
+        deny all;
+    }
+}
