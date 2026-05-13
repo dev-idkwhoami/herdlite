@@ -7,6 +7,8 @@ import (
 	"strings"
 )
 
+var shellShimNames = []string{"php", "composer", "node", "npm", "npx"}
+
 type ShellIntegration struct {
 	Path      string
 	ZshrcPath string
@@ -17,39 +19,26 @@ func WriteZshIntegration(target TargetUser, herdliteBinary string) (ShellIntegra
 	if herdliteBinary == "" {
 		return ShellIntegration{}, fmt.Errorf("herdlite binary path is empty")
 	}
+	if _, err := WriteShellShims(target); err != nil {
+		return ShellIntegration{}, err
+	}
 
 	shellDir := filepath.Join(target.Paths.ConfigDir, "shell")
 	path := filepath.Join(shellDir, "herdlite.zsh")
-	content := fmt.Sprintf(`# Herdlite shell integration.
+	content := `# Herdlite shell integration.
 # Source this file from ~/.zshrc to enable project-aware command routing.
 
-_herdlite_bin=%q
+typeset -U path PATH
 
-case ":$PATH:" in
-  *":$HOME/.local/share/herdlite/bin:"*) ;;
-  *) export PATH="$HOME/.local/share/herdlite/bin:$PATH" ;;
-esac
+path=(
+  "$HOME/.local/share/herdlite/shims"
+  "$HOME/.local/share/herdlite/bin"
+  "$HOME/.config/composer/vendor/bin"
+  $path
+)
 
-php() {
-  "$_herdlite_bin" shim php "$@"
-}
-
-composer() {
-  "$_herdlite_bin" shim composer "$@"
-}
-
-node() {
-  "$_herdlite_bin" shim node "$@"
-}
-
-npm() {
-  "$_herdlite_bin" shim npm "$@"
-}
-
-npx() {
-  "$_herdlite_bin" shim npx "$@"
-}
-`, herdliteBinary)
+export PATH
+`
 
 	if err := os.MkdirAll(shellDir, 0o755); err != nil {
 		return ShellIntegration{}, err
@@ -76,6 +65,33 @@ npx() {
 		ZshrcPath: zshrcPath,
 		Appended:  appended,
 	}, nil
+}
+
+func WriteShellShims(target TargetUser) ([]string, error) {
+	if err := os.MkdirAll(target.Paths.ShimsDir, 0o755); err != nil {
+		return nil, err
+	}
+	if os.Geteuid() == 0 {
+		if err := os.Chown(target.Paths.ShimsDir, target.UID, target.GID); err != nil {
+			return nil, err
+		}
+	}
+
+	paths := make([]string, 0, len(shellShimNames))
+	for _, name := range shellShimNames {
+		path := filepath.Join(target.Paths.ShimsDir, name)
+		content := fmt.Sprintf("#!/bin/sh\nexec \"$HOME/.local/share/herdlite/bin/herdlite\" shim %s \"$@\"\n", name)
+		if err := os.WriteFile(path, []byte(content), 0o755); err != nil {
+			return nil, err
+		}
+		if os.Geteuid() == 0 {
+			if err := os.Chown(path, target.UID, target.GID); err != nil {
+				return nil, err
+			}
+		}
+		paths = append(paths, path)
+	}
+	return paths, nil
 }
 
 func DisableZshIntegration(target TargetUser, dryRun bool) (string, error) {
@@ -188,6 +204,14 @@ func isHerdliteShellLine(trimmed string) bool {
 	}
 	return trimmed == `export PATH="$HOME/.local/share/herdlite/bin:$PATH"` ||
 		trimmed == `export PATH="$HOME/.local/share/herdlite/bin:${PATH}"` ||
+		trimmed == `typeset -U path PATH` ||
+		trimmed == `path=(` ||
+		trimmed == `)` ||
+		trimmed == `"$HOME/.local/share/herdlite/shims"` ||
+		trimmed == `"$HOME/.local/share/herdlite/bin"` ||
+		trimmed == `"$HOME/.config/composer/vendor/bin"` ||
+		trimmed == `$path` ||
+		trimmed == `export PATH` ||
 		strings.HasPrefix(trimmed, `source "$HOME/.config/herdlite/shell/herdlite.zsh"`) ||
 		strings.HasPrefix(trimmed, `source "$HOME/.config/herdlite/shell/zsh.zsh"`)
 }

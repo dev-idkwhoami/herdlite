@@ -11,6 +11,8 @@ type Paths struct {
 	CacheDir  string
 
 	StateFile     string
+	BinDir        string
+	ShimsDir      string
 	LogDir        string
 	RuntimeDir    string
 	NginxDir      string
@@ -57,6 +59,8 @@ func Resolve() (Paths, error) {
 		DataDir:       dataDir,
 		CacheDir:      cacheDir,
 		StateFile:     filepath.Join(configDir, "herdlite.db"),
+		BinDir:        filepath.Join(dataDir, "bin"),
+		ShimsDir:      filepath.Join(dataDir, "shims"),
 		LogDir:        filepath.Join(dataDir, "logs"),
 		RuntimeDir:    filepath.Join(dataDir, "runtime"),
 		NginxDir:      filepath.Join(dataDir, "nginx"),
@@ -85,6 +89,8 @@ func ResolveForHome(home string) Paths {
 		DataDir:       dataDir,
 		CacheDir:      cacheDir,
 		StateFile:     filepath.Join(configDir, "herdlite.db"),
+		BinDir:        filepath.Join(dataDir, "bin"),
+		ShimsDir:      filepath.Join(dataDir, "shims"),
 		LogDir:        filepath.Join(dataDir, "logs"),
 		RuntimeDir:    filepath.Join(dataDir, "runtime"),
 		NginxDir:      filepath.Join(dataDir, "nginx"),
@@ -108,6 +114,8 @@ func (p Paths) EnsureUserDirs() error {
 		p.ConfigDir,
 		p.DataDir,
 		p.CacheDir,
+		p.BinDir,
+		p.ShimsDir,
 		p.LogDir,
 		p.RuntimeDir,
 		p.NginxDir,

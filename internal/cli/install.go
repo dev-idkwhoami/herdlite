@@ -73,7 +73,8 @@ func runInstall(a *app.App, args []string) int {
 			return 1
 		}
 		fmt.Fprintf(a.Out, "Render nginx config: %s\n", target.Paths.NginxDir+"/nginx.conf")
-		fmt.Fprintf(a.Out, "Write zsh integration: %s\n", target.Paths.ConfigDir+"/shell/zsh.zsh")
+		fmt.Fprintf(a.Out, "Write zsh integration: %s\n", target.Paths.ConfigDir+"/shell/herdlite.zsh")
+		fmt.Fprintf(a.Out, "Write PATH shims: %s\n", target.Paths.ShimsDir)
 		fmt.Fprintf(a.Out, "Append zsh hook: %s\n", target.HomeDir+"/.zshrc")
 		fmt.Fprintf(a.Out, "Install Composer: %s\n", target.Paths.ComposerDir+"/composer.phar")
 		fmt.Fprintln(a.Out)

@@ -78,10 +78,16 @@ write_zsh_hook() {
   cat > "$shell_file" <<'EOF'
 # Herdlite shell integration.
 
-case ":$PATH:" in
-  *":$HOME/.local/share/herdlite/bin:"*) ;;
-  *) export PATH="$HOME/.local/share/herdlite/bin:$PATH" ;;
-esac
+typeset -U path PATH
+
+path=(
+  "$HOME/.local/share/herdlite/shims"
+  "$HOME/.local/share/herdlite/bin"
+  "$HOME/.config/composer/vendor/bin"
+  $path
+)
+
+export PATH
 EOF
 
   start_marker="# >>> Herdlite shell integration >>>"
