@@ -67,7 +67,7 @@ func runEnvApply(a *app.App, args []string) int {
 		return 1
 	}
 
-	values := map[string]string{}
+	values := laravel.AppEnv(project.Domain)
 	if applyDatabase {
 		mergeEnv(values, laravel.DatabaseEnv(projectDatabaseName(project)))
 	}
@@ -102,6 +102,7 @@ func mergeEnv(target map[string]string, values map[string]string) {
 
 func sortedEnvKeysForPrint(values map[string]string) []string {
 	preferred := []string{
+		"APP_NAME", "APP_URL",
 		"DB_CONNECTION", "DB_HOST", "DB_PORT", "DB_DATABASE", "DB_USERNAME", "DB_PASSWORD",
 		"MAIL_MAILER", "MAIL_HOST", "MAIL_PORT", "MAIL_USERNAME", "MAIL_PASSWORD", "MAIL_ENCRYPTION", "MAIL_FROM_ADDRESS",
 		"REVERB_HOST", "REVERB_PORT", "REVERB_SCHEME", "VITE_REVERB_HOST", "VITE_REVERB_PORT", "VITE_REVERB_SCHEME",

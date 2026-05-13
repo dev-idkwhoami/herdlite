@@ -131,12 +131,11 @@ func runLink(a *app.App, args []string) int {
 		fmt.Fprintf(a.Err, "link: create project database: %v\n", err)
 		return 1
 	}
-	if err := laravel.ApplyEnv(project.Path, laravel.DatabaseEnv(database)); err != nil {
-		fmt.Fprintf(a.Err, "link: update .env database values: %v\n", err)
-		return 1
-	}
-	if err := laravel.ApplyEnv(project.Path, laravel.MailEnv("noreply@"+project.Domain)); err != nil {
-		fmt.Fprintf(a.Err, "link: update .env mail values: %v\n", err)
+	envValues := laravel.AppEnv(project.Domain)
+	mergeEnv(envValues, laravel.DatabaseEnv(database))
+	mergeEnv(envValues, laravel.MailEnv("noreply@"+project.Domain))
+	if err := laravel.ApplyEnv(project.Path, envValues); err != nil {
+		fmt.Fprintf(a.Err, "link: update .env values: %v\n", err)
 		return 1
 	}
 

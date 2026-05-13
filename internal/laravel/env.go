@@ -59,6 +59,13 @@ func WebsocketEnv(domain string) map[string]string {
 	}
 }
 
+func AppEnv(domain string) map[string]string {
+	return map[string]string{
+		"APP_NAME": appNameFromDomain(domain),
+		"APP_URL":  "https://" + strings.TrimSpace(domain),
+	}
+}
+
 func DatabaseEnv(database string) map[string]string {
 	return map[string]string{
 		"DB_CONNECTION": "pgsql",
@@ -82,6 +89,42 @@ func MailEnv(fromAddress string) map[string]string {
 	}
 }
 
+func appNameFromDomain(domain string) string {
+	label := strings.TrimSpace(domain)
+	if index := strings.Index(label, "."); index >= 0 {
+		label = label[:index]
+	}
+
+	words := []string{}
+	for _, part := range strings.FieldsFunc(label, func(r rune) bool {
+		return r == '-' || r == '_' || r == ' ' || r == '.'
+	}) {
+		word := titleASCII(strings.ToLower(strings.TrimSpace(part)))
+		if word != "" {
+			words = append(words, word)
+		}
+	}
+	if len(words) == 0 {
+		return "App"
+	}
+	name := strings.Join(words, " ")
+	if strings.Contains(name, " ") {
+		return `"` + name + `"`
+	}
+	return name
+}
+
+func titleASCII(value string) string {
+	if value == "" {
+		return ""
+	}
+	bytes := []byte(value)
+	if bytes[0] >= 'a' && bytes[0] <= 'z' {
+		bytes[0] = bytes[0] - ('a' - 'A')
+	}
+	return string(bytes)
+}
+
 func envKey(line string) (string, bool) {
 	trimmed := strings.TrimSpace(line)
 	if trimmed == "" || strings.HasPrefix(trimmed, "#") {
@@ -103,6 +146,8 @@ func envKey(line string) (string, bool) {
 
 func sortedEnvKeys(values map[string]string) []string {
 	preferred := []string{
+		"APP_NAME",
+		"APP_URL",
 		"DB_CONNECTION",
 		"DB_HOST",
 		"DB_PORT",
