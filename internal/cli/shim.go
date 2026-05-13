@@ -61,7 +61,7 @@ func runShim(a *app.App, args []string) int {
 			fmt.Fprintf(a.Err, "shim %s: %v\n", name, err)
 			return 1
 		}
-		return runNVMCommand(project, globalNode, name, rest...)
+		return runNVMCommand(project, globalNode, a.Paths.ShimsDir, name, rest...)
 	default:
 		fmt.Fprintf(a.Err, "unknown shim command: %s\n", name)
 		return 1
@@ -156,7 +156,7 @@ func currentProjectRuntime(a *app.App) (state.Project, state.PHPRuntime, error) 
 	return project, runtime, nil
 }
 
-func runNVMCommand(project *state.Project, globalVersion string, name string, args ...string) int {
+func runNVMCommand(project *state.Project, globalVersion string, shimsDir string, name string, args ...string) int {
 	nvmDir := os.Getenv("NVM_DIR")
 	if nvmDir == "" {
 		home, err := os.UserHomeDir()
@@ -194,7 +194,11 @@ command "$HERDLITE_NODE_COMMAND" "$@"
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	cmd.Stdin = os.Stdin
-	cmd.Env = append(os.Environ(),
+	env := os.Environ()
+	if shimsDir != "" {
+		env = append(env, "PATH="+pathWithoutDir(os.Getenv("PATH"), shimsDir))
+	}
+	cmd.Env = append(env,
 		"NVM_DIR="+nvmDir,
 		"HERDLITE_PROJECT_PATH="+projectPath,
 		"HERDLITE_NODE_VERSION="+globalVersion,
@@ -209,6 +213,19 @@ command "$HERDLITE_NODE_COMMAND" "$@"
 		return 1
 	}
 	return 0
+}
+
+func pathWithoutDir(pathValue string, dir string) string {
+	entries := filepath.SplitList(pathValue)
+	filtered := entries[:0]
+	cleanDir := filepath.Clean(dir)
+	for _, entry := range entries {
+		if filepath.Clean(entry) == cleanDir {
+			continue
+		}
+		filtered = append(filtered, entry)
+	}
+	return strings.Join(filtered, string(os.PathListSeparator))
 }
 
 func runExternal(name string, args ...string) int {
