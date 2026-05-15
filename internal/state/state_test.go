@@ -213,21 +213,33 @@ func TestMailMessageStorageAndProjectClear(t *testing.T) {
 	if string(attachment.Content) != "notes" {
 		t.Fatalf("expected attachment content, got %q", string(attachment.Content))
 	}
+	deleted, err := store.DeleteMailMessage(firstID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if deleted != 1 {
+		t.Fatalf("expected deleted mail count 1, got %d", deleted)
+	}
+	if _, found, err := store.MailAttachment(firstID, message.Attachments[0].ID); err != nil {
+		t.Fatal(err)
+	} else if found {
+		t.Fatal("expected attachment to be deleted with message")
+	}
 
 	projectMessages, err := store.MailMessages(MailFilter{ProjectName: "app"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(projectMessages) != 1 {
-		t.Fatalf("expected one app message, got %d", len(projectMessages))
+	if len(projectMessages) != 0 {
+		t.Fatalf("expected deleted app message to be gone, got %d", len(projectMessages))
 	}
 
 	cleared, err := store.ClearMailMessages(MailFilter{ProjectName: "app"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if cleared != 1 {
-		t.Fatalf("expected one cleared message, got %d", cleared)
+	if cleared != 0 {
+		t.Fatalf("expected no app messages left to clear, got %d", cleared)
 	}
 	remaining, err := store.MailMessages(MailFilter{All: true})
 	if err != nil {
@@ -235,6 +247,53 @@ func TestMailMessageStorageAndProjectClear(t *testing.T) {
 	}
 	if len(remaining) != 1 || remaining[0].ProjectName != UnknownProjectName {
 		t.Fatalf("expected only unknown message remaining, got %#v", remaining)
+	}
+}
+
+func TestDebugDumpHardCapAndClearBefore(t *testing.T) {
+	store := NewStore(filepath.Join(t.TempDir(), "herdlite.db"))
+
+	var cutoff int64
+	for i := 0; i < MaxDebugDumps; i++ {
+		id, err := store.AddDebugDump(DebugDump{ProjectName: "app", HTML: "<div>dump</div>"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if id == 0 {
+			t.Fatalf("expected dump %d to be stored before cap", i)
+		}
+		if i == 10 {
+			cutoff = id
+		}
+	}
+	id, err := store.AddDebugDump(DebugDump{ProjectName: "app", HTML: "<div>overflow</div>"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if id != 0 {
+		t.Fatalf("expected dump over cap to be silently skipped, got id %d", id)
+	}
+
+	cleared, err := store.ClearDebugDumpsBefore(cutoff)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cleared != 10 {
+		t.Fatalf("expected 10 old dumps cleared, got %d", cleared)
+	}
+	dumps, err := store.DebugDumps(MaxDebugDumps)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(dumps) != MaxDebugDumps-10 {
+		t.Fatalf("expected remaining dumps after clear-before, got %d", len(dumps))
+	}
+	deleted, err := store.DeleteDebugDump(cutoff)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if deleted != 1 {
+		t.Fatalf("expected one deleted dump, got %d", deleted)
 	}
 }
 

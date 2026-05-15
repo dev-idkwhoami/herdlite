@@ -54,6 +54,9 @@ func (m HostingManager) Start(ctx context.Context) error {
 	if _, err := nginxManager.WriteBaseConfig(); err != nil {
 		return fmt.Errorf("render nginx config: %w", err)
 	}
+	if _, err := nginxManager.WriteDebugSite(); err != nil {
+		return fmt.Errorf("render nginx debug site: %w", err)
+	}
 	if err := m.startOrReloadNginx(ctx); err != nil {
 		return err
 	}

@@ -73,6 +73,7 @@ func runInstall(a *app.App, args []string) int {
 			return 1
 		}
 		fmt.Fprintf(a.Out, "Render nginx config: %s\n", target.Paths.NginxDir+"/nginx.conf")
+		fmt.Fprintf(a.Out, "Render debug site config: %s\n", target.Paths.NginxSitesDir+"/debug.herdlite.test.conf")
 		fmt.Fprintf(a.Out, "Write zsh integration: %s\n", target.Paths.ConfigDir+"/shell/herdlite.zsh")
 		fmt.Fprintf(a.Out, "Write PATH shims: %s\n", target.Paths.ShimsDir)
 		fmt.Fprintf(a.Out, "Append zsh hook: %s\n", target.HomeDir+"/.zshrc")
@@ -128,13 +129,23 @@ func runInstall(a *app.App, args []string) int {
 		fmt.Fprintf(a.Err, "install: DNS setup failed: %v\n", err)
 		return 1
 	}
-	nginxConfig, err := (nginx.Manager{Paths: target.Paths}).WriteBaseConfig()
+	nginxManager := nginx.Manager{Paths: target.Paths}
+	nginxConfig, err := nginxManager.WriteBaseConfig()
 	if err != nil {
 		fmt.Fprintf(a.Err, "install: render nginx config: %v\n", err)
 		return 1
 	}
 	if err := chownTargetPath(target, nginxConfig); err != nil {
 		fmt.Fprintf(a.Err, "install: fix nginx config ownership: %v\n", err)
+		return 1
+	}
+	debugConfig, err := nginxManager.WriteDebugSite()
+	if err != nil {
+		fmt.Fprintf(a.Err, "install: render nginx debug site: %v\n", err)
+		return 1
+	}
+	if err := chownTargetPath(target, debugConfig); err != nil {
+		fmt.Fprintf(a.Err, "install: fix nginx debug site ownership: %v\n", err)
 		return 1
 	}
 	if os.Geteuid() == 0 {
@@ -144,6 +155,7 @@ func runInstall(a *app.App, args []string) int {
 		}
 	}
 	fmt.Fprintf(a.Out, "Rendered nginx config: %s\n", nginxConfig)
+	fmt.Fprintf(a.Out, "Rendered debug site config: %s\n", debugConfig)
 
 	executable, err := os.Executable()
 	if err != nil {

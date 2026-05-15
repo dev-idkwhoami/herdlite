@@ -29,10 +29,11 @@ type Service struct {
 	Store         *state.Store
 	Out           io.Writer
 	ExtraHandlers func(*http.ServeMux)
+	OnMail        func(state.MailMessage)
 }
 
 func (s Service) Run(ctx context.Context) error {
-	smtpServer := smtp.NewServer(&backend{store: s.Store})
+	smtpServer := smtp.NewServer(&backend{store: s.Store, onMail: s.OnMail})
 	smtpServer.Addr = SMTPAddr
 	smtpServer.Domain = "herdlite.local"
 	smtpServer.ReadTimeout = 10 * time.Second
@@ -269,15 +270,17 @@ func contentDisposition(filename string) string {
 }
 
 type backend struct {
-	store *state.Store
+	store  *state.Store
+	onMail func(state.MailMessage)
 }
 
 func (b *backend) NewSession(_ *smtp.Conn) (smtp.Session, error) {
-	return &session{store: b.store}, nil
+	return &session{store: b.store, onMail: b.onMail}, nil
 }
 
 type session struct {
 	store      *state.Store
+	onMail     func(state.MailMessage)
 	from       string
 	recipients []string
 }
@@ -307,8 +310,16 @@ func (s *session) Data(r io.Reader) error {
 		return err
 	}
 	project := DetectProjectName(parsed, projects)
-	_, err = s.store.AddMailMessage(parsed.ToStateMessage(project))
-	return err
+	message := parsed.ToStateMessage(project)
+	id, err := s.store.AddMailMessage(message)
+	if err != nil {
+		return err
+	}
+	message.ID = id
+	if s.onMail != nil {
+		s.onMail(message)
+	}
+	return nil
 }
 
 func (s *session) Reset() {

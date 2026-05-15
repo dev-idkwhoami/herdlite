@@ -34,13 +34,20 @@ func (s Service) registerLogHandlers(mux *http.ServeMux) {
 	})
 	mux.HandleFunc("/logs", s.serveLogsIndex)
 	mux.HandleFunc("/logs/", s.serveLogRoute)
+	mux.HandleFunc("/api/logs", s.serveLogsAPI)
 }
 
-func (s Service) serveLogsIndex(w http.ResponseWriter, _ *http.Request) {
-	logs := s.logs()
-	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	w.Header().Set("Content-Security-Policy", "default-src 'none'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; connect-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'")
-	fmt.Fprint(w, logPage(logs, s.Token))
+func (s Service) serveLogsIndex(w http.ResponseWriter, r *http.Request) {
+	http.Redirect(w, r, "/app/logs", http.StatusFound)
+}
+
+func (s Service) serveLogsAPI(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(s.logs())
 }
 
 func (s Service) serveLogRoute(w http.ResponseWriter, r *http.Request) {
@@ -95,6 +102,7 @@ func (s Service) serveLogClear(w http.ResponseWriter, r *http.Request, id string
 		return
 	}
 	_ = file.Close()
+	s.publish("log.changed", id)
 	w.Header().Set("Content-Type", "application/json")
 	fmt.Fprint(w, `{"ok":true}`)
 }
@@ -115,11 +123,45 @@ func (s Service) logs() []logEntry {
 		{ID: "nginx-error", Label: "Nginx Error", Path: filepath.Join(s.Paths.LogDir, "nginx-error.log")},
 		{ID: "postgres", Label: "PostgreSQL", Path: filepath.Join(s.Paths.LogDir, "postgres.log")},
 	}
+	if s.Store != nil {
+		projects, err := s.Store.Projects()
+		if err == nil {
+			for _, project := range projects {
+				out = append(out, logEntry{
+					ID:    "laravel-" + logIDPart(project.Name),
+					Label: project.Name + " Laravel",
+					Path:  filepath.Join(project.Path, "storage", "logs", "laravel.log"),
+				})
+			}
+		}
+	}
 	matches, _ := filepath.Glob(filepath.Join(s.Paths.LogDir, "php-fpm-*.launcher.log"))
 	sort.Strings(matches)
 	for _, path := range matches {
 		name := strings.TrimSuffix(filepath.Base(path), ".launcher.log")
 		out = append(out, logEntry{ID: name, Label: strings.ToUpper(strings.ReplaceAll(name, "-", " ")), Path: path})
+	}
+	return out
+}
+
+func logIDPart(value string) string {
+	value = strings.ToLower(value)
+	var builder strings.Builder
+	dashed := false
+	for _, char := range value {
+		if char >= 'a' && char <= 'z' || char >= '0' && char <= '9' {
+			builder.WriteRune(char)
+			dashed = false
+			continue
+		}
+		if !dashed {
+			builder.WriteByte('-')
+			dashed = true
+		}
+	}
+	out := strings.Trim(builder.String(), "-")
+	if out == "" {
+		return "project"
 	}
 	return out
 }

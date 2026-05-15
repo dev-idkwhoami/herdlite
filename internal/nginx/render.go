@@ -10,9 +10,13 @@ import (
 	"strings"
 
 	"herdlite/internal/certs"
+	"herdlite/internal/debugui"
 	"herdlite/internal/paths"
 	"herdlite/internal/state"
 )
+
+//go:embed templates/debug.conf.tmpl
+var debugTemplate string
 
 //go:embed templates/websocket.conf.tmpl
 var websocketTemplate string
@@ -122,12 +126,28 @@ func (m Manager) WriteWebsocket(project state.Project, cert certs.SiteCert) (str
 	return path, os.WriteFile(path, []byte(content), 0o644)
 }
 
+func (m Manager) WriteDebugSite() (string, error) {
+	content := replaceAll(debugTemplate, map[string]string{
+		"{{DEBUG_DOMAIN}}": debugui.Domain,
+	})
+	if err := os.MkdirAll(m.Paths.NginxSitesDir, 0o755); err != nil {
+		return "", err
+	}
+
+	path := m.DebugConfigPath()
+	return path, os.WriteFile(path, []byte(content), 0o644)
+}
+
 func (m Manager) RemoveWebsocket(project state.Project) error {
 	err := os.Remove(m.WebsocketConfigPath(project))
 	if os.IsNotExist(err) {
 		return nil
 	}
 	return err
+}
+
+func (m Manager) DebugConfigPath() string {
+	return filepath.Join(m.Paths.NginxSitesDir, debugui.Domain+".conf")
 }
 
 func (m Manager) WebsocketConfigPath(project state.Project) string {

@@ -15,6 +15,7 @@ import (
 	"syscall"
 	"time"
 
+	"herdlite/internal/debugui"
 	"herdlite/internal/mail"
 	"herdlite/internal/paths"
 	"herdlite/internal/state"
@@ -27,10 +28,11 @@ type Manager struct {
 }
 
 type Service struct {
-	Paths paths.Paths
-	Store *state.Store
-	Out   io.Writer
-	Token string
+	Paths  paths.Paths
+	Store  *state.Store
+	Out    io.Writer
+	Token  string
+	Events *EventHub
 }
 
 type Status struct {
@@ -52,7 +54,7 @@ func (m Manager) Start(ctx context.Context) error {
 		m.printf("Daemon is already running.\n")
 		m.printf("  pid:  %d\n", status.PID)
 		m.printf("  mail:  http://%s\n", mail.HTTPAddr)
-		m.printf("  dumps: http://%s/dumps\n", mail.HTTPAddr)
+		m.printf("  debug: %s\n", debugui.BaseURL)
 		return nil
 	}
 	removeStalePID(m.PIDPath())
@@ -92,7 +94,7 @@ func (m Manager) Start(ctx context.Context) error {
 			m.printf("Started Herdlite daemon.\n")
 			m.printf("  pid:  %d\n", status.PID)
 			m.printf("  mail:  http://%s\n", mail.HTTPAddr)
-			m.printf("  dumps: http://%s/dumps\n", mail.HTTPAddr)
+			m.printf("  debug: %s\n", debugui.BaseURL)
 			return nil
 		}
 		time.Sleep(100 * time.Millisecond)
@@ -158,16 +160,38 @@ func (s Service) Run(ctx context.Context) error {
 	fmt.Fprintln(s.Out, "Herdlite daemon started.")
 	fmt.Fprintf(s.Out, "Mail SMTP: %s\n", mail.SMTPAddr)
 	fmt.Fprintf(s.Out, "Mail HTTP: http://%s\n", mail.HTTPAddr)
-	fmt.Fprintf(s.Out, "Dumps: http://%s/dumps\n", mail.HTTPAddr)
+	fmt.Fprintf(s.Out, "Debug UI: %s\n", debugui.BaseURL)
 	if s.Token == "" {
 		s.Token = randomToken()
 	}
-	return (mail.Service{Paths: s.Paths, Store: s.Store, Out: s.Out, ExtraHandlers: s.registerHTTPHandlers}).Run(ctx)
+	if s.Events == nil {
+		s.Events = NewEventHub()
+	}
+	return (mail.Service{
+		Paths:         s.Paths,
+		Store:         s.Store,
+		Out:           s.Out,
+		ExtraHandlers: s.registerHTTPHandlers,
+		OnMail: func(message state.MailMessage) {
+			s.publish("mail.created", strconv.FormatInt(message.ID, 10))
+		},
+	}).Run(ctx)
 }
 
 func (s Service) registerHTTPHandlers(mux *http.ServeMux) {
+	s.registerUIHandlers(mux)
 	s.registerLogHandlers(mux)
 	s.registerDumpHandlers(mux)
+	s.registerMailAPIHandlers(mux)
+	s.registerEventHandlers(mux)
+	s.registerSessionHandlers(mux)
+}
+
+func (s Service) publish(eventType string, id string) {
+	if s.Events == nil {
+		return
+	}
+	s.Events.Publish(eventMessage{Type: eventType, ID: id})
 }
 
 func HTTPHealthy() bool {

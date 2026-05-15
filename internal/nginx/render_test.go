@@ -86,3 +86,35 @@ func TestWriteSiteConfig(t *testing.T) {
 		t.Fatalf("expected Livewire route in config, got:\n%s", content)
 	}
 }
+
+func TestWriteDebugSiteConfig(t *testing.T) {
+	root := t.TempDir()
+	manager := Manager{Paths: paths.Paths{
+		NginxDir:      filepath.Join(root, "nginx"),
+		NginxSitesDir: filepath.Join(root, "nginx", "sites"),
+		LogDir:        filepath.Join(root, "logs"),
+	}}
+
+	path, err := manager.WriteDebugSite()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	content := string(data)
+	if filepath.Base(path) != "debug.herdlite.test.conf" {
+		t.Fatalf("expected dedicated debug site file, got %s", path)
+	}
+	if !strings.Contains(content, "server_name debug.herdlite.test;") {
+		t.Fatalf("expected debug domain in config, got:\n%s", content)
+	}
+	if !strings.Contains(content, "proxy_pass http://127.0.0.1:7391;") {
+		t.Fatalf("expected daemon proxy in config, got:\n%s", content)
+	}
+	if !strings.Contains(content, "proxy_set_header Upgrade $http_upgrade;") {
+		t.Fatalf("expected websocket upgrade proxy headers, got:\n%s", content)
+	}
+}

@@ -24,10 +24,14 @@ if (!class_exists(\Symfony\Component\VarDumper\VarDumper::class)
     return;
 }
 
-\Symfony\Component\VarDumper\VarDumper::setHandler(static function (mixed $value) use ($root): ?string {
+\Symfony\Component\VarDumper\VarDumper::setHandler(static function (mixed $value, ?string $label = null) use ($root): ?string {
     $cloner = new \Symfony\Component\VarDumper\Cloner\VarCloner();
     $dumper = new \Symfony\Component\VarDumper\Dumper\HtmlDumper();
-    $html = $dumper->dump($cloner->cloneVar($value), true);
+    $data = $cloner->cloneVar($value);
+    if ($label !== null) {
+        $data = $data->withContext(['label' => $label]);
+    }
+    $html = $dumper->dump($data, true);
 
     herdlite_post_dump([
         'project_path' => $root,
@@ -41,6 +45,8 @@ if (!class_exists(\Symfony\Component\VarDumper\VarDumper::class)
 
     return null;
 });
+
+$_SERVER['VAR_DUMPER_FORMAT'] = 'server';
 
 function herdlite_project_root(): ?string
 {

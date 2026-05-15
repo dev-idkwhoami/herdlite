@@ -6,7 +6,7 @@ import (
 
 	"herdlite/internal/app"
 	"herdlite/internal/daemon"
-	"herdlite/internal/mail"
+	"herdlite/internal/debugui"
 )
 
 func runDumps(a *app.App, args []string) int {
@@ -29,7 +29,7 @@ func runDumps(a *app.App, args []string) int {
 			fmt.Fprintln(a.Err, "dumps open: xdg-open not found")
 			return 1
 		}
-		url := "http://" + mail.HTTPAddr + "/dumps"
+		url := debugui.BaseURL + "/app/dumps"
 		if err := exec.Command(opener, url).Start(); err != nil {
 			fmt.Fprintf(a.Err, "dumps open: %v\n", err)
 			return 1

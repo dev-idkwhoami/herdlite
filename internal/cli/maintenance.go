@@ -44,6 +44,7 @@ func runRepair(a *app.App, args []string) int {
 		fmt.Fprintln(a.Out, "  - enable nginx low-port binding")
 		fmt.Fprintln(a.Out, "  - configure wildcard .test DNS")
 		fmt.Fprintln(a.Out, "  - render nginx base config")
+		fmt.Fprintln(a.Out, "  - render nginx debug site config")
 		fmt.Fprintln(a.Out, "  - write zsh integration")
 		fmt.Fprintln(a.Out, "  - append zsh hook at the end of ~/.zshrc if missing")
 		return repairSystem(a, target, true)
@@ -95,13 +96,23 @@ func repairSystem(a *app.App, target install.TargetUser, dryRun bool) int {
 		return 1
 	}
 	if !dryRun {
-		nginxConfig, err := (nginx.Manager{Paths: target.Paths}).WriteBaseConfig()
+		nginxManager := nginx.Manager{Paths: target.Paths}
+		nginxConfig, err := nginxManager.WriteBaseConfig()
 		if err != nil {
 			fmt.Fprintf(a.Err, "repair: render nginx config: %v\n", err)
 			return 1
 		}
 		if err := chownTargetPath(target, nginxConfig); err != nil {
 			fmt.Fprintf(a.Err, "repair: fix nginx config ownership: %v\n", err)
+			return 1
+		}
+		debugConfig, err := nginxManager.WriteDebugSite()
+		if err != nil {
+			fmt.Fprintf(a.Err, "repair: render nginx debug site: %v\n", err)
+			return 1
+		}
+		if err := chownTargetPath(target, debugConfig); err != nil {
+			fmt.Fprintf(a.Err, "repair: fix nginx debug site ownership: %v\n", err)
 			return 1
 		}
 		if os.Geteuid() == 0 {
@@ -111,6 +122,7 @@ func repairSystem(a *app.App, target install.TargetUser, dryRun bool) int {
 			}
 		}
 		fmt.Fprintf(a.Out, "Rendered nginx config: %s\n", nginxConfig)
+		fmt.Fprintf(a.Out, "Rendered debug site config: %s\n", debugConfig)
 
 		executable, err := os.Executable()
 		if err != nil {

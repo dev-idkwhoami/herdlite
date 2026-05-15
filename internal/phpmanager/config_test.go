@@ -23,6 +23,7 @@ func TestRenderConfig(t *testing.T) {
 	assertFileContains(t, paths.Pool, "listen = "+paths.Socket)
 	assertFileContains(t, paths.RuntimeINI, "auto_prepend_file="+paths.PrependFile)
 	assertFileContains(t, paths.PrependFile, "VarDumper::setHandler")
+	assertFileContains(t, paths.PrependFile, "$_SERVER['VAR_DUMPER_FORMAT'] = 'server';")
 }
 
 func assertFileContains(t *testing.T, path string, expected string) {

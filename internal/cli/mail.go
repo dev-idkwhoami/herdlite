@@ -12,7 +12,7 @@ import (
 
 	"herdlite/internal/app"
 	"herdlite/internal/daemon"
-	"herdlite/internal/mail"
+	"herdlite/internal/debugui"
 	"herdlite/internal/state"
 )
 
@@ -170,7 +170,7 @@ func runMailOpen(a *app.App, args []string) int {
 		fmt.Fprintf(a.Err, "mail open: xdg-open not found\n")
 		return 1
 	}
-	url := fmt.Sprintf("http://%s/mail/%d/html", mail.HTTPAddr, id)
+	url := fmt.Sprintf("%s/app/mail/%d", debugui.BaseURL, id)
 	if err := exec.Command(opener, url).Start(); err != nil {
 		fmt.Fprintf(a.Err, "mail open: %v\n", err)
 		return 1

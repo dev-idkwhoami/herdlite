@@ -106,6 +106,7 @@ type DebugDump struct {
 }
 
 const UnknownProjectName = "Unknown Project"
+const MaxDebugDumps = 1000
 
 func NewStore(path string) *Store {
 	return &Store{path: path}
@@ -767,6 +768,20 @@ func (s *Store) ClearMailMessages(filter MailFilter) (int64, error) {
 	return result.RowsAffected()
 }
 
+func (s *Store) DeleteMailMessage(id int64) (int64, error) {
+	db, err := s.open()
+	if err != nil {
+		return 0, err
+	}
+	defer db.Close()
+
+	result, err := db.Exec(`DELETE FROM mail_messages WHERE id = ?`, id)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
+}
+
 func (s *Store) AddDebugDump(dump DebugDump) (int64, error) {
 	db, err := s.open()
 	if err != nil {
@@ -784,10 +799,19 @@ func (s *Store) AddDebugDump(dump DebugDump) (int64, error) {
 	result, err := db.Exec(`
 		INSERT INTO debug_dumps (
 			project_name, project_path, sapi, uri, command, file, html, captured_at
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-	`, dump.ProjectName, dump.ProjectPath, dump.SAPI, dump.URI, dump.Command, dump.File, dump.HTML, formatTime(dump.CapturedAt))
+		)
+		SELECT ?, ?, ?, ?, ?, ?, ?, ?
+		WHERE (SELECT COUNT(*) FROM debug_dumps) < ?
+	`, dump.ProjectName, dump.ProjectPath, dump.SAPI, dump.URI, dump.Command, dump.File, dump.HTML, formatTime(dump.CapturedAt), MaxDebugDumps)
 	if err != nil {
 		return 0, err
+	}
+	rows, err := result.RowsAffected()
+	if err != nil {
+		return 0, err
+	}
+	if rows == 0 {
+		return 0, nil
 	}
 	return result.LastInsertId()
 }
@@ -799,7 +823,7 @@ func (s *Store) DebugDumps(limit int) ([]DebugDump, error) {
 	}
 	defer db.Close()
 
-	if limit <= 0 || limit > 500 {
+	if limit <= 0 || limit > MaxDebugDumps {
 		limit = 100
 	}
 	rows, err := db.Query(`
@@ -832,6 +856,34 @@ func (s *Store) ClearDebugDumps() (int64, error) {
 	defer db.Close()
 
 	result, err := db.Exec(`DELETE FROM debug_dumps`)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
+}
+
+func (s *Store) DeleteDebugDump(id int64) (int64, error) {
+	db, err := s.open()
+	if err != nil {
+		return 0, err
+	}
+	defer db.Close()
+
+	result, err := db.Exec(`DELETE FROM debug_dumps WHERE id = ?`, id)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
+}
+
+func (s *Store) ClearDebugDumpsBefore(id int64) (int64, error) {
+	db, err := s.open()
+	if err != nil {
+		return 0, err
+	}
+	defer db.Close()
+
+	result, err := db.Exec(`DELETE FROM debug_dumps WHERE id < ?`, id)
 	if err != nil {
 		return 0, err
 	}
