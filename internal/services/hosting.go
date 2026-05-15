@@ -16,6 +16,7 @@ import (
 	"herdlite/internal/nginx"
 	"herdlite/internal/paths"
 	"herdlite/internal/phpmanager"
+	"herdlite/internal/postgres"
 	"herdlite/internal/state"
 )
 
@@ -38,6 +39,11 @@ func (m HostingManager) Start(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
+
+	if err := (postgres.Manager{Paths: m.Paths, Out: m.Out}).Start(ctx); err != nil {
+		return fmt.Errorf("start PostgreSQL: %w", err)
+	}
+
 	for _, runtime := range needed {
 		if err := m.startFPM(ctx, runtime); err != nil {
 			return err
@@ -73,6 +79,9 @@ func (m HostingManager) Stop(ctx context.Context) error {
 		if err := m.stopFPM(runtime); err != nil {
 			return err
 		}
+	}
+	if err := (postgres.Manager{Paths: m.Paths, Out: m.Out}).Stop(ctx); err != nil {
+		return fmt.Errorf("stop PostgreSQL: %w", err)
 	}
 	return nil
 }
