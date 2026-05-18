@@ -18,12 +18,16 @@
 		logSources,
 		mailDetail,
 		mailList,
+		queueWorkers,
 		session,
+		startQueue,
+		stopQueue,
 		type DebugDump,
 		type EventMessage,
 		type LogSource,
 		type MailDetail,
 		type MailSummary,
+		type QueueWorker,
 		type View,
 	} from '$lib/api';
 	import {
@@ -34,7 +38,9 @@
 		Monitor,
 		Moon,
 		RefreshCw,
+		Play,
 		ScrollText,
+		Square,
 		Sun,
 		Trash2,
 	} from '@lucide/svelte';
@@ -67,6 +73,10 @@
 	let logFilter = $state('');
 	let logLevel = $state('');
 	let logOrder = $state<'desc' | 'asc'>('desc');
+	let logProject = $state('');
+	let logKind = $state('');
+
+	let queues = $state<QueueWorker[]>([]);
 
 	let staleMail = $state(0);
 	let staleDumps = $state(0);
@@ -75,6 +85,10 @@
 
 	const selectedDump = $derived(dumps.find((dump) => dump.id === selectedDumpID) ?? dumps[0] ?? null);
 	const selectedLog = $derived(logs.find((log) => log.id === selectedLogID) ?? logs[0] ?? null);
+	const logProjects = $derived(uniqueValues(logs.map((log) => log.project_name).filter(Boolean)));
+	const visibleLogs = $derived(
+		logs.filter((log) => (!logProject || log.project_name === logProject) && (!logKind || log.kind === logKind)),
+	);
 	const visibleLogText = $derived(filteredLogText(logText, logFilter, logLevel, logOrder));
 
 	onMount(() => {
@@ -98,7 +112,7 @@
 	async function boot() {
 		try {
 			token = (await session()).token;
-			await Promise.all([loadMail(), loadDumps(), loadLogs()]);
+			await Promise.all([loadMail(), loadDumps(), loadLogs(), loadQueues()]);
 		} catch (err) {
 			showError(err);
 		}
@@ -121,6 +135,8 @@
 			await loadMail();
 		} else if (view === 'dumps') {
 			await loadDumps();
+		} else if (view === 'queues') {
+			await loadQueues();
 		} else {
 			await loadLogs();
 		}
@@ -175,8 +191,16 @@
 			logText = '';
 			return;
 		}
-		if (!selectedLogID || !logs.some((log) => log.id === selectedLogID)) {
-			selectedLogID = logs[0].id;
+		if (logProject && !logs.some((log) => log.project_name === logProject)) {
+			logProject = '';
+		}
+		if (!visibleLogs.length) {
+			selectedLogID = '';
+			logText = '';
+			return;
+		}
+		if (!selectedLogID || !visibleLogs.some((log) => log.id === selectedLogID)) {
+			selectedLogID = visibleLogs[0].id;
 		}
 		logText = await logRaw(selectedLogID);
 	}
@@ -184,6 +208,28 @@
 	async function selectLog(id: string) {
 		selectedLogID = id;
 		logText = await logRaw(id);
+	}
+
+	async function loadQueues() {
+		queues = await queueWorkers();
+	}
+
+	async function setQueue(projectName: string, action: 'start' | 'stop') {
+		if (action === 'start') {
+			await startQueue(projectName, token);
+		} else {
+			await stopQueue(projectName, token);
+		}
+		await Promise.all([loadQueues(), loadLogs()]);
+	}
+
+	async function openQueueLog(worker: QueueWorker) {
+		logProject = worker.project_name;
+		logKind = 'queue';
+		view = 'logs';
+		history.pushState(null, '', '/app/logs');
+		await loadLogs();
+		await selectLog(worker.log_id);
 	}
 
 	async function clearCurrentMail() {
@@ -268,6 +314,10 @@
 		if (event.type === 'log.changed') {
 			if (view === 'logs') await loadLogs();
 			else staleLogs += 1;
+		}
+		if (event.type === 'queue.changed') {
+			await loadQueues();
+			if (view !== 'queues') staleLogs += 1;
 		}
 	}
 
@@ -378,7 +428,7 @@
 
 	function viewFromPath(): View {
 		const part = location.pathname.replace(/^\/app\/?/, '').split('/')[0];
-		if (part === 'dumps' || part === 'logs' || part === 'mail') return part;
+		if (part === 'dumps' || part === 'logs' || part === 'mail' || part === 'queues') return part;
 		return 'mail';
 	}
 
@@ -395,6 +445,10 @@
 		if (level) lines = lines.filter((line) => line.toLowerCase().includes(level));
 		if (order === 'desc') lines = lines.reverse();
 		return lines.join('\n');
+	}
+
+	function uniqueValues(values: string[]) {
+		return Array.from(new Set(values)).sort();
 	}
 </script>
 
@@ -437,19 +491,25 @@
 				<span class="nav-label">Logs</span>
 				{#if staleLogs}<Badge class="nav-badge" variant="secondary">{staleLogs}</Badge>{/if}
 			</button>
+			<button class:active={view === 'queues'} aria-label="Queues" title="Queues" onclick={() => navigate('queues')}>
+				<Play size={16} />
+				<span class="nav-label">Queues</span>
+			</button>
 		</nav>
 	</aside>
 
 	<section class="workspace">
 		<header class="topbar">
 			<div>
-				<h1>{view === 'mail' ? 'Mail' : view === 'dumps' ? 'Dumps' : 'Logs'}</h1>
+				<h1>{view === 'mail' ? 'Mail' : view === 'dumps' ? 'Dumps' : view === 'queues' ? 'Queues' : 'Logs'}</h1>
 				<p>
 					{view === 'mail'
 						? `${mails.length} captured messages`
 						: view === 'dumps'
 							? `${dumps.length} captured dumps`
-							: `${logs.length} log sources`}
+							: view === 'queues'
+								? `${queues.filter((queue) => queue.running).length} running workers`
+								: `${logs.length} log sources`}
 				</p>
 			</div>
 			<div class="actions">
@@ -481,7 +541,7 @@
 					<Button variant="destructive" size="sm" onclick={clearCurrentMail}><Trash2 />Clear</Button>
 				{:else if view === 'dumps'}
 					<Button variant="destructive" size="sm" onclick={clearCurrentDumps}><Trash2 />Clear</Button>
-				{:else}
+				{:else if view === 'logs'}
 					<Button variant="destructive" size="sm" onclick={clearCurrentLog}><Trash2 />Clear</Button>
 				{/if}
 			</div>
@@ -577,14 +637,16 @@
 					{/if}
 				</section>
 			</div>
-		{:else}
+		{:else if view === 'logs'}
 			<div class="split">
 				<ScrollArea class="list-pane">
-					{#each logs as log}
+					{#each visibleLogs as log}
 						<button class:item-active={log.id === selectedLogID} class="item" onclick={() => selectLog(log.id)}>
 							<strong>{log.label}</strong>
-							<small>{log.id}</small>
+							<small>{log.kind}{log.project_name ? ` · ${log.project_name}` : ''}</small>
 						</button>
+					{:else}
+						<div class="empty"><ScrollText />No matching log sources.</div>
 					{/each}
 				</ScrollArea>
 				<section class="detail-pane">
@@ -592,6 +654,20 @@
 						<h2>{selectedLog?.label ?? 'Logs'}</h2>
 						<div class="log-controls">
 							<Input placeholder="Filter" bind:value={logFilter} />
+							<select bind:value={logProject} onchange={() => loadLogs()}>
+								<option value="">All projects</option>
+								{#each logProjects as project}
+									<option value={project}>{project}</option>
+								{/each}
+							</select>
+							<select bind:value={logKind} onchange={() => loadLogs()}>
+								<option value="">All sources</option>
+								<option value="laravel">Laravel</option>
+								<option value="queue">Queue</option>
+								<option value="nginx">Nginx</option>
+								<option value="php-fpm">PHP-FPM</option>
+								<option value="system">System</option>
+							</select>
 							<select bind:value={logLevel}>
 								<option value="">All</option>
 								<option value="error">error</option>
@@ -610,6 +686,30 @@
 						<pre>{visibleLogText || 'No log lines.'}</pre>
 					</ScrollArea>
 				</section>
+			</div>
+		{:else}
+			<div class="single-pane">
+				<ScrollArea class="list-pane wide-list">
+					{#each queues as worker}
+						<div class="item queue-item">
+							<div>
+								<strong>{worker.project_name}</strong>
+								<span>{worker.running ? `PID ${worker.pid}` : 'Stopped'}</span>
+								<small>{worker.project_path}</small>
+							</div>
+							<div class="queue-actions">
+								<Button variant="outline" size="sm" onclick={() => openQueueLog(worker)}><ScrollText />Log</Button>
+								{#if worker.running}
+									<Button variant="destructive" size="sm" onclick={() => setQueue(worker.project_name, 'stop')}><Square />Stop</Button>
+								{:else}
+									<Button variant="default" size="sm" onclick={() => setQueue(worker.project_name, 'start')}><Play />Start</Button>
+								{/if}
+							</div>
+						</div>
+					{:else}
+						<div class="empty"><Play />No linked projects.</div>
+					{/each}
+				</ScrollArea>
 			</div>
 		{/if}
 	</section>

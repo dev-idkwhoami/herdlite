@@ -297,6 +297,35 @@ func (s *Store) ProjectByNameOrDomain(value string) (Project, bool, error) {
 	return project, true, nil
 }
 
+func (s *Store) RemoveProject(name string) (Project, error) {
+	db, err := s.open()
+	if err != nil {
+		return Project{}, err
+	}
+	defer db.Close()
+
+	project, found, err := projectByName(db, name)
+	if err != nil {
+		return Project{}, err
+	}
+	if !found {
+		return Project{}, fmt.Errorf("project %s not found", name)
+	}
+
+	result, err := db.Exec(`DELETE FROM projects WHERE name = ?`, project.Name)
+	if err != nil {
+		return Project{}, err
+	}
+	affected, err := result.RowsAffected()
+	if err != nil {
+		return Project{}, err
+	}
+	if affected == 0 {
+		return Project{}, fmt.Errorf("project %s not found", name)
+	}
+	return project, nil
+}
+
 func (s *Store) ProjectForWorkingDirectory(dir string) (Project, bool, error) {
 	absDir, err := filepath.Abs(dir)
 	if err != nil {
@@ -1082,6 +1111,25 @@ func projectByPath(db *sql.DB, path string) (Project, bool, error) {
 		FROM projects
 		WHERE path = ?
 	`, path)
+
+	project, err := scanProject(row)
+	if errors.Is(err, sql.ErrNoRows) {
+		return Project{}, false, nil
+	}
+	if err != nil {
+		return Project{}, false, err
+	}
+	return project, true, nil
+}
+
+func projectByName(db *sql.DB, name string) (Project, bool, error) {
+	row := db.QueryRow(`
+		SELECT name, path, domain, php_version, node_mode, enabled,
+		       websocket_enabled, websocket_domain, websocket_port,
+		       created_at, updated_at
+		FROM projects
+		WHERE name = ?
+	`, name)
 
 	project, err := scanProject(row)
 	if errors.Is(err, sql.ErrNoRows) {

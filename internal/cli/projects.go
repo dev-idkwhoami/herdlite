@@ -13,6 +13,7 @@ import (
 	"herdlite/internal/laravel"
 	"herdlite/internal/nginx"
 	"herdlite/internal/postgres"
+	"herdlite/internal/queue"
 	"herdlite/internal/state"
 )
 
@@ -265,6 +266,51 @@ func runList(a *app.App, args []string) int {
 		fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\n", project.Name, project.Domain, phpVersion, ws, project.Path)
 	}
 	w.Flush()
+	return 0
+}
+
+func runUnlink(a *app.App, args []string) int {
+	if hasHelp(args) {
+		fmt.Fprintln(a.Out, "Usage: herdlite unlink [--p <path|name|domain>]")
+		return 0
+	}
+
+	selector, args, err := splitProjectSelector(args)
+	if err != nil {
+		fmt.Fprintf(a.Err, "unlink: %v\n", err)
+		return 1
+	}
+	if len(args) != 0 {
+		fmt.Fprintf(a.Err, "unknown unlink option: %s\n", args[0])
+		return 1
+	}
+
+	project, err := resolveExistingProject(a, selector)
+	if err != nil {
+		fmt.Fprintf(a.Err, "unlink: %v\n", err)
+		return 1
+	}
+
+	if _, err := (queue.Manager{Paths: a.Paths, Store: a.Store, Out: a.Out}).Stop(project); err != nil {
+		fmt.Fprintf(a.Err, "unlink: stop queue worker: %v\n", err)
+		return 1
+	}
+	if err := (nginx.Manager{Paths: a.Paths}).RemoveSite(project); err != nil {
+		fmt.Fprintf(a.Err, "unlink: remove nginx config: %v\n", err)
+		return 1
+	}
+	if _, err := a.Store.RemoveProject(project.Name); err != nil {
+		fmt.Fprintf(a.Err, "unlink: %v\n", err)
+		return 1
+	}
+	if _, err := (nginx.Manager{Paths: a.Paths}).WriteBaseConfig(); err != nil {
+		fmt.Fprintf(a.Err, "unlink: nginx base config: %v\n", err)
+		return 1
+	}
+
+	fmt.Fprintf(a.Out, "Unlinked %s\n", project.Name)
+	fmt.Fprintf(a.Out, "  domain: %s\n", project.Domain)
+	fmt.Fprintf(a.Out, "  path:   %s\n", project.Path)
 	return 0
 }
 

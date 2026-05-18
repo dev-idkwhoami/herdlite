@@ -182,6 +182,7 @@ func (s Service) registerHTTPHandlers(mux *http.ServeMux) {
 	s.registerUIHandlers(mux)
 	s.registerLogHandlers(mux)
 	s.registerDumpHandlers(mux)
+	s.registerQueueHandlers(mux)
 	s.registerMailAPIHandlers(mux)
 	s.registerEventHandlers(mux)
 	s.registerSessionHandlers(mux)

@@ -697,9 +697,18 @@ nav button [data-slot='badge'] {
 	flex: 1;
 }
 
+.single-pane {
+	min-height: 0;
+	flex: 1;
+}
+
 .list-pane {
 	min-height: 0;
 	border-right: 1px solid var(--border);
+}
+
+.wide-list {
+	border-right: 0;
 }
 
 .item {
@@ -740,6 +749,24 @@ nav button [data-slot='badge'] {
 
 .item small {
 	font-size: 11px;
+}
+
+.queue-item {
+	grid-template-columns: minmax(0, 1fr) auto;
+	align-items: center;
+	cursor: default;
+}
+
+.queue-item > div:first-child {
+	display: grid;
+	gap: 4px;
+	min-width: 0;
+}
+
+.queue-actions {
+	display: flex;
+	align-items: center;
+	gap: 8px;
 }
 
 .detail-pane {

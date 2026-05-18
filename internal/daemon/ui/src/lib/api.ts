@@ -1,4 +1,4 @@
-export type View = 'mail' | 'dumps' | 'logs';
+export type View = 'mail' | 'dumps' | 'logs' | 'queues';
 
 export type MailSummary = {
 	id: number;
@@ -43,6 +43,16 @@ export type DebugDump = {
 export type LogSource = {
 	id: string;
 	label: string;
+	kind: string;
+	project_name: string;
+};
+
+export type QueueWorker = {
+	project_name: string;
+	project_path: string;
+	log_id: string;
+	running: boolean;
+	pid: number;
 };
 
 export type EventMessage = {
@@ -111,6 +121,24 @@ export function clearDumpsBefore(id: number, token: string) {
 
 export function logSources() {
 	return request<LogSource[]>('/api/logs');
+}
+
+export function queueWorkers() {
+	return request<QueueWorker[]>('/api/queues');
+}
+
+export function startQueue(projectName: string, token: string) {
+	return request<QueueWorker>(`/api/queues/${encodeURIComponent(projectName)}/start`, {
+		method: 'POST',
+		headers: { 'X-Herdlite-Token': token },
+	});
+}
+
+export function stopQueue(projectName: string, token: string) {
+	return request<QueueWorker>(`/api/queues/${encodeURIComponent(projectName)}/stop`, {
+		method: 'POST',
+		headers: { 'X-Herdlite-Token': token },
+	});
 }
 
 export async function logRaw(id: string) {

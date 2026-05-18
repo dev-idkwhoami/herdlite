@@ -112,6 +112,12 @@ func TestLogsIncludesLinkedProjectLaravelLog(t *testing.T) {
 	if !strings.Contains(list.Body.String(), `"id":"laravel-felyne-de"`) {
 		t.Fatalf("expected linked Laravel log in API response, got %s", list.Body.String())
 	}
+	if !strings.Contains(list.Body.String(), `"kind":"laravel"`) || !strings.Contains(list.Body.String(), `"project_name":"felyne-de"`) {
+		t.Fatalf("expected project log metadata in API response, got %s", list.Body.String())
+	}
+	if !strings.Contains(list.Body.String(), `"id":"queue-felyne-de"`) || !strings.Contains(list.Body.String(), `"kind":"queue"`) {
+		t.Fatalf("expected queue log in API response, got %s", list.Body.String())
+	}
 
 	raw := httptest.NewRecorder()
 	handler.ServeHTTP(raw, httptest.NewRequest(http.MethodGet, "/logs/laravel-felyne-de/raw", nil))

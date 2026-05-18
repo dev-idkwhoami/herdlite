@@ -9,6 +9,8 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+
+	"herdlite/internal/queue"
 )
 
 //go:embed assets/vendor/highlightjs/highlight.min.js
@@ -18,9 +20,11 @@ var highlightJS string
 var highlightCSS string
 
 type logEntry struct {
-	ID    string `json:"id"`
-	Label string `json:"label"`
-	Path  string `json:"-"`
+	ID          string `json:"id"`
+	Label       string `json:"label"`
+	Kind        string `json:"kind"`
+	ProjectName string `json:"project_name"`
+	Path        string `json:"-"`
 }
 
 func (s Service) registerLogHandlers(mux *http.ServeMux) {
@@ -118,19 +122,28 @@ func (s Service) logByID(id string) (logEntry, bool) {
 
 func (s Service) logs() []logEntry {
 	out := []logEntry{
-		{ID: "daemon", Label: "Daemon", Path: filepath.Join(s.Paths.LogDir, "daemon.log")},
-		{ID: "nginx-access", Label: "Nginx Access", Path: filepath.Join(s.Paths.LogDir, "nginx-access.log")},
-		{ID: "nginx-error", Label: "Nginx Error", Path: filepath.Join(s.Paths.LogDir, "nginx-error.log")},
-		{ID: "postgres", Label: "PostgreSQL", Path: filepath.Join(s.Paths.LogDir, "postgres.log")},
+		{ID: "daemon", Label: "Daemon", Kind: "system", Path: filepath.Join(s.Paths.LogDir, "daemon.log")},
+		{ID: "nginx-access", Label: "Nginx Access", Kind: "nginx", Path: filepath.Join(s.Paths.LogDir, "nginx-access.log")},
+		{ID: "nginx-error", Label: "Nginx Error", Kind: "nginx", Path: filepath.Join(s.Paths.LogDir, "nginx-error.log")},
+		{ID: "postgres", Label: "PostgreSQL", Kind: "system", Path: filepath.Join(s.Paths.LogDir, "postgres.log")},
 	}
 	if s.Store != nil {
 		projects, err := s.Store.Projects()
 		if err == nil {
 			for _, project := range projects {
 				out = append(out, logEntry{
-					ID:    "laravel-" + logIDPart(project.Name),
-					Label: project.Name + " Laravel",
-					Path:  filepath.Join(project.Path, "storage", "logs", "laravel.log"),
+					ID:          "laravel-" + queue.IDPart(project.Name),
+					Label:       project.Name + " Laravel",
+					Kind:        "laravel",
+					ProjectName: project.Name,
+					Path:        filepath.Join(project.Path, "storage", "logs", "laravel.log"),
+				})
+				out = append(out, logEntry{
+					ID:          "queue-" + queue.IDPart(project.Name),
+					Label:       project.Name + " Queue",
+					Kind:        "queue",
+					ProjectName: project.Name,
+					Path:        (queue.Manager{Paths: s.Paths}).LogPath(project),
 				})
 			}
 		}
@@ -139,29 +152,7 @@ func (s Service) logs() []logEntry {
 	sort.Strings(matches)
 	for _, path := range matches {
 		name := strings.TrimSuffix(filepath.Base(path), ".launcher.log")
-		out = append(out, logEntry{ID: name, Label: strings.ToUpper(strings.ReplaceAll(name, "-", " ")), Path: path})
-	}
-	return out
-}
-
-func logIDPart(value string) string {
-	value = strings.ToLower(value)
-	var builder strings.Builder
-	dashed := false
-	for _, char := range value {
-		if char >= 'a' && char <= 'z' || char >= '0' && char <= '9' {
-			builder.WriteRune(char)
-			dashed = false
-			continue
-		}
-		if !dashed {
-			builder.WriteByte('-')
-			dashed = true
-		}
-	}
-	out := strings.Trim(builder.String(), "-")
-	if out == "" {
-		return "project"
+		out = append(out, logEntry{ID: name, Label: strings.ToUpper(strings.ReplaceAll(name, "-", " ")), Kind: "php-fpm", Path: path})
 	}
 	return out
 }

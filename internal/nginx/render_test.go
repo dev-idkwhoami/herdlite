@@ -87,6 +87,41 @@ func TestWriteSiteConfig(t *testing.T) {
 	}
 }
 
+func TestRemoveSiteConfig(t *testing.T) {
+	root := t.TempDir()
+	manager := Manager{Paths: paths.Paths{
+		NginxSitesDir: filepath.Join(root, "nginx", "sites"),
+	}}
+	project := state.Project{
+		Name:   "app",
+		Domain: "app.test",
+		Websocket: state.WebsocketSettings{
+			Enabled: true,
+			Domain:  "app-ws.test",
+		},
+	}
+	if err := os.MkdirAll(manager.Paths.NginxSitesDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	for _, path := range []string{manager.SiteConfigPath(project), manager.WebsocketConfigPath(project)} {
+		if err := os.WriteFile(path, []byte("config"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	if err := manager.RemoveSite(project); err != nil {
+		t.Fatal(err)
+	}
+	for _, path := range []string{manager.SiteConfigPath(project), manager.WebsocketConfigPath(project)} {
+		if _, err := os.Stat(path); !os.IsNotExist(err) {
+			t.Fatalf("expected %s to be removed, got %v", path, err)
+		}
+	}
+	if err := manager.RemoveSite(project); err != nil {
+		t.Fatalf("expected missing configs to be ignored: %v", err)
+	}
+}
+
 func TestWriteDebugSiteConfig(t *testing.T) {
 	root := t.TempDir()
 	manager := Manager{Paths: paths.Paths{

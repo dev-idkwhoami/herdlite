@@ -74,6 +74,30 @@ func TestProjectByNameOrDomain(t *testing.T) {
 	}
 }
 
+func TestRemoveProject(t *testing.T) {
+	store := NewStore(filepath.Join(t.TempDir(), "herdlite.db"))
+	projectPath := laravelProject(t, "my-app")
+
+	project, err := store.AddProjectWithOptions(projectPath, ProjectOptions{PHPVersion: "8.4.1"})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	removed, err := store.RemoveProject(project.Name)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if removed.Name != project.Name {
+		t.Fatalf("expected removed project %s, got %s", project.Name, removed.Name)
+	}
+
+	if _, ok, err := store.ProjectByNameOrDomain(project.Name); err != nil {
+		t.Fatal(err)
+	} else if ok {
+		t.Fatal("expected project to be removed")
+	}
+}
+
 func TestAddProjectWithCustomNameAndDomain(t *testing.T) {
 	store := NewStore(filepath.Join(t.TempDir(), "herdlite.db"))
 	projectPath := laravelProject(t, "directory-name")

@@ -98,6 +98,12 @@ func allCommands() []command {
 			Run:         runList,
 		},
 		{
+			Name:        "unlink",
+			Usage:       "herdlite unlink [--p <path|name|domain>]",
+			Description: "remove a registered project",
+			Run:         runUnlink,
+		},
+		{
 			Name:        "start",
 			Usage:       "herdlite start",
 			Description: "start local hosting services",

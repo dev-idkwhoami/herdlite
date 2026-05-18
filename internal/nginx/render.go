@@ -146,6 +146,13 @@ func (m Manager) RemoveWebsocket(project state.Project) error {
 	return err
 }
 
+func (m Manager) RemoveSite(project state.Project) error {
+	if err := os.Remove(m.SiteConfigPath(project)); err != nil && !os.IsNotExist(err) {
+		return err
+	}
+	return m.RemoveWebsocket(project)
+}
+
 func (m Manager) DebugConfigPath() string {
 	return filepath.Join(m.Paths.NginxSitesDir, debugui.Domain+".conf")
 }

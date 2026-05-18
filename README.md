@@ -159,6 +159,12 @@ herdlite open --p my-app
 herdlite open --p my-app.test
 ```
 
+Unlink a project:
+
+```sh
+herdlite unlink --p my-app
+```
+
 ## PHP Management
 
 List installed PHP runtimes:
@@ -240,6 +246,8 @@ Open the debug UI:
 herdlite debug
 ```
 
+The debug UI includes mail, dumps, logs with project/source filters, and per-project Laravel queue worker controls.
+
 Install or remove a desktop launcher for the debug UI:
 
 ```sh
@@ -305,14 +313,6 @@ This project is still in active development. SQLite migrations are intentionally
 Planning notes are intentionally not tracked in git. Keep local architecture notes under `docs/` if needed.
 
 ## TODO
-
-### Medium
-
-1. Project unlink command that removes Herdlite hosting config and generated project state.
-2. Project filters for logs, including Nginx and PHP-FPM output.
-3. Per-project Laravel queue worker management with logs in the debug UI.
-
-### Hard
 
 1. Query listening.
 2. Optional services such as RustFS, Meilisearch, and Redis.
