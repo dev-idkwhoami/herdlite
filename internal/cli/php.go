@@ -9,6 +9,7 @@ import (
 	"herdlite/internal/certs"
 	"herdlite/internal/nginx"
 	"herdlite/internal/phpmanager"
+	"herdlite/internal/state"
 )
 
 func runPHP(a *app.App, args []string) int {
@@ -71,7 +72,7 @@ func runPHPAvailable(a *app.App, args []string) int {
 	for _, release := range latest {
 		status := "supported"
 		if branch, ok := eol[release.Minor]; ok {
-			status = "EOL " + branch.EOLDate
+			status = phpEOLStatus(branch)
 		}
 		fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\n", release.Minor, release.Version, status, release.Tag, release.Published.Format("2006-01-02"))
 	}
@@ -200,12 +201,19 @@ func runPHPList(a *app.App, args []string) int {
 	for _, runtime := range runtimes {
 		status := "supported"
 		if branch, ok := eol[runtime.Minor]; ok {
-			status = "EOL " + branch.EOLDate
+			status = phpEOLStatus(branch)
 		}
 		fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\n", runtime.Version, runtime.Minor, status, runtime.Source, runtime.Prefix)
 	}
 	w.Flush()
 	return 0
+}
+
+func phpEOLStatus(branch state.PHPEOLBranch) string {
+	if branch.EOLDate == "" {
+		return "unsupported"
+	}
+	return "EOL " + branch.EOLDate
 }
 
 func runPHPUse(a *app.App, args []string) int {

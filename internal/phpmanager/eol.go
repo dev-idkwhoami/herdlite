@@ -2,17 +2,17 @@ package phpmanager
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
-	"regexp"
-	"strings"
+	"sort"
 	"time"
 
 	"herdlite/internal/state"
 )
 
-const eolURL = "https://www.php.net/eol.php"
+const eolURL = "https://www.php.net/releases/?json"
 
 type EOLClient struct {
 	HTTPClient *http.Client
@@ -74,69 +74,43 @@ func SyncEOL(ctx context.Context, store *state.Store) ([]state.PHPEOLBranch, err
 }
 
 func ParseEOL(r io.Reader) ([]EOLBranch, error) {
-	data, err := io.ReadAll(r)
-	if err != nil {
+	var raw map[string]phpNetRelease
+	if err := json.NewDecoder(r).Decode(&raw); err != nil {
 		return nil, err
 	}
 
-	rows := htmlRows(string(data))
+	supported := map[string]bool{}
+	for _, release := range raw {
+		for _, minor := range release.SupportedVersions {
+			supported[minor] = true
+		}
+	}
 
 	branches := []EOLBranch{}
-	for _, row := range rows {
-		if len(row) < 3 {
+	for _, release := range raw {
+		if !isFullVersion(release.Version) {
 			continue
 		}
 
-		minor := firstVersion(row[0], `^\d+\.\d+$`)
-		if minor == "" {
+		minor := minorVersion(release.Version)
+		if supported[minor] {
 			continue
-		}
-
-		lastRelease := ""
-		for _, cell := range row[2:] {
-			lastRelease = firstVersion(cell, `\d+\.\d+\.\d+`)
-			if lastRelease != "" {
-				break
-			}
 		}
 
 		branches = append(branches, EOLBranch{
 			Minor:       minor,
-			EOLDate:     normalizeSpaces(row[1]),
-			LastRelease: lastRelease,
+			LastRelease: release.Version,
 		})
 	}
+
+	sort.Slice(branches, func(i, j int) bool {
+		return compareVersion(branches[i].Minor+".0", branches[j].Minor+".0") > 0
+	})
 
 	return branches, nil
 }
 
-func htmlRows(input string) [][]string {
-	rowPattern := regexp.MustCompile(`(?is)<tr[^>]*>(.*?)</tr>`)
-	cellPattern := regexp.MustCompile(`(?is)<t[dh][^>]*>(.*?)</t[dh]>`)
-	tagPattern := regexp.MustCompile(`(?is)<[^>]+>`)
-
-	rows := [][]string{}
-	for _, rowMatch := range rowPattern.FindAllStringSubmatch(input, -1) {
-		cells := []string{}
-		for _, cellMatch := range cellPattern.FindAllStringSubmatch(rowMatch[1], -1) {
-			text := tagPattern.ReplaceAllString(cellMatch[1], " ")
-			text = strings.ReplaceAll(text, "&nbsp;", " ")
-			text = strings.ReplaceAll(text, "&#039;", "'")
-			text = strings.ReplaceAll(text, "&amp;", "&")
-			cells = append(cells, normalizeSpaces(text))
-		}
-		if len(cells) > 0 {
-			rows = append(rows, cells)
-		}
-	}
-	return rows
-}
-
-func normalizeSpaces(value string) string {
-	return strings.Join(strings.Fields(value), " ")
-}
-
-func firstVersion(value string, pattern string) string {
-	re := regexp.MustCompile(pattern)
-	return re.FindString(value)
+type phpNetRelease struct {
+	Version           string   `json:"version"`
+	SupportedVersions []string `json:"supported_versions"`
 }

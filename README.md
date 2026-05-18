@@ -232,18 +232,19 @@ Clear captured mail:
 herdlite mail clear
 ```
 
-## Logs And Dumps
+## Debug UI
 
-Open the daemon log viewer:
+Open the debug UI:
 
 ```sh
-herdlite logs open
+herdlite debug
 ```
 
-Open the experimental dump viewer:
+Install or remove a desktop launcher for the debug UI:
 
 ```sh
-herdlite dumps open
+herdlite app install
+herdlite app remove
 ```
 
 Dump capture is experimental. It uses a Herdlite-managed PHP prepend file and Symfony VarDumper when the project already provides Symfony VarDumper through its normal dependencies.
@@ -302,3 +303,17 @@ herdlite-linux-amd64.tar.gz.sha256
 This project is still in active development. SQLite migrations are intentionally not implemented yet. During development, deleting the local Herdlite database is acceptable when the schema changes.
 
 Planning notes are intentionally not tracked in git. Keep local architecture notes under `docs/` if needed.
+
+## TODO
+
+### Medium
+
+1. Project unlink command that removes Herdlite hosting config and generated project state.
+2. Project filters for logs, including Nginx and PHP-FPM output.
+3. Per-project Laravel queue worker management with logs in the debug UI.
+
+### Hard
+
+1. Query listening.
+2. Optional services such as RustFS, Meilisearch, and Redis.
+3. Additional database systems, including MySQL and MariaDB.
