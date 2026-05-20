@@ -122,6 +122,12 @@ func runLink(a *app.App, args []string) int {
 	if oldProject != nil && oldProject.Domain != project.Domain {
 		removeStaleSiteConfigs(a.Paths.NginxSitesDir, *oldProject)
 	}
+	if oldProject != nil && oldProject.Name != project.Name {
+		if err := a.Store.OrphanProjectResource(oldProject.Name); err != nil {
+			fmt.Fprintf(a.Err, "link: record old project resources: %v\n", err)
+			return 1
+		}
+	}
 	if _, err := nginxManager.WriteBaseConfig(); err != nil {
 		fmt.Fprintf(a.Err, "link: nginx base config: %v\n", err)
 		return 1
@@ -130,6 +136,10 @@ func runLink(a *app.App, args []string) int {
 	database := projectDatabaseName(project)
 	if err := (postgres.Manager{Paths: a.Paths, Out: a.Out}).EnsureDatabase(context.Background(), database); err != nil {
 		fmt.Fprintf(a.Err, "link: create project database: %v\n", err)
+		return 1
+	}
+	if err := a.Store.RecordProjectResource(project, database); err != nil {
+		fmt.Fprintf(a.Err, "link: record project resources: %v\n", err)
 		return 1
 	}
 	envValues := laravel.AppEnv(project.Domain)
@@ -166,6 +176,15 @@ func runLink(a *app.App, args []string) int {
 		fmt.Fprintf(a.Out, "  websocket: https://%s -> 127.0.0.1:%d\n", project.Websocket.Domain, project.Websocket.Port)
 		fmt.Fprintf(a.Out, "  ws config: %s\n", wsConf)
 		fmt.Fprintf(a.Out, "  env:      %s\n", project.Path+"/.env")
+	}
+	if reloaded, err := nginxManager.ReloadIfRunning(context.Background()); err != nil {
+		fmt.Fprintf(a.Err, "link: reload nginx: %v\n", err)
+		return 1
+	} else if reloaded {
+		fmt.Fprintln(a.Out, "Reloaded nginx.")
+	}
+	if code := runDNSSyncWithSudo(a); code != 0 {
+		return code
 	}
 	return 0
 }
@@ -295,19 +314,37 @@ func runUnlink(a *app.App, args []string) int {
 		fmt.Fprintf(a.Err, "unlink: stop queue worker: %v\n", err)
 		return 1
 	}
-	if err := (nginx.Manager{Paths: a.Paths}).RemoveSite(project); err != nil {
+	nginxManager := nginx.Manager{Paths: a.Paths}
+	if err := nginxManager.RemoveSite(project); err != nil {
 		fmt.Fprintf(a.Err, "unlink: remove nginx config: %v\n", err)
+		return 1
+	}
+	if err := a.Store.RecordProjectResource(project, projectDatabaseName(project)); err != nil {
+		fmt.Fprintf(a.Err, "unlink: record project resources: %v\n", err)
 		return 1
 	}
 	if _, err := a.Store.RemoveProject(project.Name); err != nil {
 		fmt.Fprintf(a.Err, "unlink: %v\n", err)
 		return 1
 	}
-	if _, err := (nginx.Manager{Paths: a.Paths}).WriteBaseConfig(); err != nil {
+	if err := a.Store.OrphanProjectResource(project.Name); err != nil {
+		fmt.Fprintf(a.Err, "unlink: record unused resources: %v\n", err)
+		return 1
+	}
+	if _, err := nginxManager.WriteBaseConfig(); err != nil {
 		fmt.Fprintf(a.Err, "unlink: nginx base config: %v\n", err)
 		return 1
 	}
+	if reloaded, err := nginxManager.ReloadIfRunning(context.Background()); err != nil {
+		fmt.Fprintf(a.Err, "unlink: reload nginx: %v\n", err)
+		return 1
+	} else if reloaded {
+		fmt.Fprintln(a.Out, "Reloaded nginx.")
+	}
 
+	if code := runDNSSyncWithSudo(a); code != 0 {
+		return code
+	}
 	fmt.Fprintf(a.Out, "Unlinked %s\n", project.Name)
 	fmt.Fprintf(a.Out, "  domain: %s\n", project.Domain)
 	fmt.Fprintf(a.Out, "  path:   %s\n", project.Path)

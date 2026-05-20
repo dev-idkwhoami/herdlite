@@ -98,6 +98,50 @@ func TestRemoveProject(t *testing.T) {
 	}
 }
 
+func TestProjectResourcesCanBeOrphanedAndForgotten(t *testing.T) {
+	store := NewStore(filepath.Join(t.TempDir(), "state.db"))
+	projectPath := laravelProject(t, "my-app")
+	project, err := store.AddProjectWithOptions(projectPath, ProjectOptions{
+		PHPVersion:       "8.4.1",
+		WebsocketEnabled: true,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if err := store.RecordProjectResource(project, "my_app"); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.OrphanProjectResource(project.Name); err != nil {
+		t.Fatal(err)
+	}
+
+	resources, err := store.ProjectResources()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(resources) != 1 {
+		t.Fatalf("expected one resource, got %d", len(resources))
+	}
+	if resources[0].Linked {
+		t.Fatal("expected resource to be orphaned")
+	}
+	if resources[0].DatabaseName != "my_app" || resources[0].Domain != project.Domain || resources[0].WebsocketDomain != project.Websocket.Domain {
+		t.Fatalf("unexpected resource: %+v", resources[0])
+	}
+
+	if err := store.ForgetProjectResource(project.Name); err != nil {
+		t.Fatal(err)
+	}
+	resources, err = store.ProjectResources()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(resources) != 0 {
+		t.Fatalf("expected resources to be forgotten, got %+v", resources)
+	}
+}
+
 func TestAddProjectWithCustomNameAndDomain(t *testing.T) {
 	store := NewStore(filepath.Join(t.TempDir(), "herdlite.db"))
 	projectPath := laravelProject(t, "directory-name")

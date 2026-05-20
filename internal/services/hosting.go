@@ -31,9 +31,6 @@ func (m HostingManager) Start(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	if len(projects) == 0 {
-		return fmt.Errorf("no linked projects; run `herdlite link` first")
-	}
 
 	needed, err := m.requiredPHPRuntimes(projects)
 	if err != nil {

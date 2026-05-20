@@ -168,6 +168,34 @@ func (m Manager) EnsureDatabase(ctx context.Context, name string) error {
 	return nil
 }
 
+func (m Manager) DropDatabase(ctx context.Context, name string) error {
+	if !validDatabaseName(name) {
+		return fmt.Errorf("invalid database name %q", name)
+	}
+	dropdb, err := exec.LookPath("dropdb")
+	if err != nil {
+		return fmt.Errorf("dropdb not found")
+	}
+	if err := m.Start(ctx); err != nil {
+		return err
+	}
+	if exists, err := m.databaseExists(ctx, name); err != nil {
+		return err
+	} else if !exists {
+		m.printf("PostgreSQL database already absent: %s\n", name)
+		return nil
+	}
+	cmd := exec.CommandContext(ctx, dropdb, "-h", "127.0.0.1", "-U", "root", name)
+	cmd.Stdout = m.Out
+	cmd.Stderr = m.Out
+	cmd.Stdin = os.Stdin
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("drop database %s: %w", name, err)
+	}
+	m.printf("Dropped PostgreSQL database: %s\n", name)
+	return nil
+}
+
 func (m Manager) EnsureRootRole(ctx context.Context) error {
 	psql, err := exec.LookPath("psql")
 	if err != nil {

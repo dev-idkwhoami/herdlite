@@ -274,16 +274,20 @@ func (s SystemManager) DisableLowPortBinding(binary string, dryRun bool) error {
 	return cmd.Run()
 }
 
-func (s SystemManager) ConfigureTestDNS(dryRun bool) error {
+func (s SystemManager) ConfigureTestDNS(dnsmasqConfig string, dryRun bool) error {
 	if err := detectNetworkManagerDNSMasq(); err != nil {
 		return err
 	}
+	if strings.TrimSpace(dnsmasqConfig) == "" {
+		return fmt.Errorf("DNS config is empty")
+	}
 
-	s.printf("Configure .test DNS through NetworkManager dnsmasq\n")
+	s.printf("Configure Herdlite .test DNS through NetworkManager dnsmasq\n")
 	s.printf("Write: %s\n", networkManagerHerdliteConf)
 	s.printf("Write: %s\n", networkManagerDNSMasqConf)
 	s.printf("Run: systemctl reload NetworkManager\n")
 	if dryRun {
+		s.printf("\n%s", dnsmasqConfig)
 		return nil
 	}
 
@@ -301,7 +305,7 @@ func (s SystemManager) ConfigureTestDNS(dryRun bool) error {
 	if err := os.WriteFile(networkManagerHerdliteConf, []byte("[main]\ndns=dnsmasq\n"), 0o644); err != nil {
 		return err
 	}
-	if err := os.WriteFile(networkManagerDNSMasqConf, []byte("address=/.test/127.0.0.1\n"), 0o644); err != nil {
+	if err := os.WriteFile(networkManagerDNSMasqConf, []byte(dnsmasqConfig), 0o644); err != nil {
 		return err
 	}
 

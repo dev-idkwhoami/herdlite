@@ -165,6 +165,13 @@ Unlink a project:
 herdlite unlink --p my-app
 ```
 
+Remove unused Herdlite-managed site certificates and recorded project databases without touching project folders:
+
+```sh
+herdlite purge --dry-run
+herdlite purge
+```
+
 ## PHP Management
 
 List installed PHP runtimes:

@@ -6,6 +6,7 @@ import (
 	"os"
 
 	"herdlite/internal/app"
+	"herdlite/internal/dns"
 	"herdlite/internal/install"
 	"herdlite/internal/nginx"
 	"herdlite/internal/services"
@@ -42,7 +43,7 @@ func runRepair(a *app.App, args []string) int {
 		fmt.Fprintln(a.Out, "  - ensure user directories")
 		fmt.Fprintln(a.Out, "  - trust local CA in system and browser trust stores")
 		fmt.Fprintln(a.Out, "  - enable nginx low-port binding")
-		fmt.Fprintln(a.Out, "  - configure wildcard .test DNS")
+		fmt.Fprintln(a.Out, "  - configure Herdlite-managed .test hosts")
 		fmt.Fprintln(a.Out, "  - render nginx base config")
 		fmt.Fprintln(a.Out, "  - render nginx debug site config")
 		fmt.Fprintln(a.Out, "  - write zsh integration")
@@ -91,7 +92,12 @@ func repairSystem(a *app.App, target install.TargetUser, dryRun bool) int {
 			return 1
 		}
 	}
-	if err := system.ConfigureTestDNS(dryRun); err != nil {
+	dnsConfig, err := dns.HostRecordConfig(targetStore(target))
+	if err != nil {
+		fmt.Fprintf(a.Err, "repair: DNS records failed: %v\n", err)
+		return 1
+	}
+	if err := system.ConfigureTestDNS(dnsConfig, dryRun); err != nil {
 		fmt.Fprintf(a.Err, "repair: DNS setup failed: %v\n", err)
 		return 1
 	}
@@ -178,7 +184,7 @@ func runUninstall(a *app.App, args []string) int {
 	fmt.Fprintln(a.Out, "  - stop Herdlite hosting services")
 	fmt.Fprintln(a.Out, "  - remove trusted local CA from system and browser trust stores")
 	fmt.Fprintln(a.Out, "  - leave nginx low-port capability unchanged")
-	fmt.Fprintln(a.Out, "  - comment out wildcard .test DNS config")
+	fmt.Fprintln(a.Out, "  - comment out Herdlite .test DNS config")
 	fmt.Fprintln(a.Out, "  - comment out zsh integration and ~/.zshrc hook")
 	if purge {
 		fmt.Fprintln(a.Out, "  - purge Herdlite config, data, and cache directories")

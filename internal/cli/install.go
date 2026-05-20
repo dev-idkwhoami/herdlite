@@ -6,6 +6,7 @@ import (
 	"os/exec"
 
 	"herdlite/internal/app"
+	"herdlite/internal/dns"
 	"herdlite/internal/install"
 	"herdlite/internal/nginx"
 	"herdlite/internal/state"
@@ -49,7 +50,7 @@ func runInstall(a *app.App, args []string) int {
 	fmt.Fprintln(a.Out, "  - resolve latest upstream PHP release")
 	fmt.Fprintln(a.Out, "  - download, build, and install latest PHP as default runtime")
 	fmt.Fprintln(a.Out, "  - install Herdlite-managed Composer")
-	fmt.Fprintln(a.Out, "  - detect DNS resolver and configure wildcard .test")
+	fmt.Fprintln(a.Out, "  - detect DNS resolver and configure Herdlite-managed .test hosts")
 	fmt.Fprintln(a.Out, "  - create and trust local CA in system and browser trust stores")
 	fmt.Fprintln(a.Out, "  - enable user-run nginx to bind ports 80 and 443")
 	fmt.Fprintln(a.Out, "  - install shell integration")
@@ -68,7 +69,12 @@ func runInstall(a *app.App, args []string) int {
 			return 1
 		}
 		system := install.SystemManager{Out: a.Out}
-		if err := system.ConfigureTestDNS(true); err != nil {
+		dnsConfig, err := dns.HostRecordConfig(targetStore(target))
+		if err != nil {
+			fmt.Fprintf(a.Err, "install: DNS records: %v\n", err)
+			return 1
+		}
+		if err := system.ConfigureTestDNS(dnsConfig, true); err != nil {
 			fmt.Fprintf(a.Err, "install: %v\n", err)
 			return 1
 		}
@@ -125,7 +131,12 @@ func runInstall(a *app.App, args []string) int {
 			return 1
 		}
 	}
-	if err := system.ConfigureTestDNS(false); err != nil {
+	dnsConfig, err := dns.HostRecordConfig(targetStore(target))
+	if err != nil {
+		fmt.Fprintf(a.Err, "install: DNS records failed: %v\n", err)
+		return 1
+	}
+	if err := system.ConfigureTestDNS(dnsConfig, false); err != nil {
 		fmt.Fprintf(a.Err, "install: DNS setup failed: %v\n", err)
 		return 1
 	}

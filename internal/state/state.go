@@ -63,6 +63,15 @@ type PHPEOLBranch struct {
 	FetchedAt   time.Time
 }
 
+type ProjectResource struct {
+	ProjectName     string
+	Domain          string
+	WebsocketDomain string
+	DatabaseName    string
+	Linked          bool
+	UpdatedAt       time.Time
+}
+
 type MailMessage struct {
 	ID          int64
 	ProjectName string
@@ -324,6 +333,85 @@ func (s *Store) RemoveProject(name string) (Project, error) {
 		return Project{}, fmt.Errorf("project %s not found", name)
 	}
 	return project, nil
+}
+
+func (s *Store) RecordProjectResource(project Project, databaseName string) error {
+	db, err := s.open()
+	if err != nil {
+		return err
+	}
+	defer db.Close()
+
+	resource := ProjectResource{
+		ProjectName:     project.Name,
+		Domain:          project.Domain,
+		WebsocketDomain: "",
+		DatabaseName:    databaseName,
+		Linked:          true,
+		UpdatedAt:       time.Now().UTC(),
+	}
+	if project.Websocket.Enabled {
+		resource.WebsocketDomain = project.Websocket.Domain
+	}
+	return upsertProjectResource(db, resource)
+}
+
+func (s *Store) OrphanProjectResource(projectName string) error {
+	db, err := s.open()
+	if err != nil {
+		return err
+	}
+	defer db.Close()
+
+	_, err = db.Exec(`
+		UPDATE project_resources
+		SET linked = 0, updated_at = ?
+		WHERE project_name = ?
+	`, formatTime(time.Now().UTC()), projectName)
+	return err
+}
+
+func (s *Store) ProjectResources() ([]ProjectResource, error) {
+	db, err := s.open()
+	if err != nil {
+		return nil, err
+	}
+	defer db.Close()
+
+	rows, err := db.Query(`
+		SELECT project_name, domain, websocket_domain, database_name, linked, updated_at
+		FROM project_resources
+		ORDER BY project_name
+	`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var resources []ProjectResource
+	for rows.Next() {
+		var resource ProjectResource
+		var linked int
+		var updatedAt string
+		if err := rows.Scan(&resource.ProjectName, &resource.Domain, &resource.WebsocketDomain, &resource.DatabaseName, &linked, &updatedAt); err != nil {
+			return nil, err
+		}
+		resource.Linked = linked != 0
+		resource.UpdatedAt = parseTime(updatedAt)
+		resources = append(resources, resource)
+	}
+	return resources, rows.Err()
+}
+
+func (s *Store) ForgetProjectResource(projectName string) error {
+	db, err := s.open()
+	if err != nil {
+		return err
+	}
+	defer db.Close()
+
+	_, err = db.Exec(`DELETE FROM project_resources WHERE project_name = ?`, projectName)
+	return err
 }
 
 func (s *Store) ProjectForWorkingDirectory(dir string) (Project, bool, error) {
@@ -971,6 +1059,14 @@ func ensureSchema(db *sql.DB) error {
 			last_release TEXT NOT NULL,
 			fetched_at TEXT NOT NULL
 		)`,
+		`CREATE TABLE IF NOT EXISTS project_resources (
+			project_name TEXT PRIMARY KEY,
+			domain TEXT NOT NULL,
+			websocket_domain TEXT NOT NULL DEFAULT '',
+			database_name TEXT NOT NULL,
+			linked INTEGER NOT NULL DEFAULT 1,
+			updated_at TEXT NOT NULL
+		)`,
 		`CREATE TABLE IF NOT EXISTS meta (
 			key TEXT PRIMARY KEY,
 			value TEXT NOT NULL
@@ -1139,6 +1235,25 @@ func projectByName(db *sql.DB, name string) (Project, bool, error) {
 		return Project{}, false, err
 	}
 	return project, true, nil
+}
+
+func upsertProjectResource(db *sql.DB, resource ProjectResource) error {
+	linked := 0
+	if resource.Linked {
+		linked = 1
+	}
+	_, err := db.Exec(`
+		INSERT INTO project_resources (
+			project_name, domain, websocket_domain, database_name, linked, updated_at
+		) VALUES (?, ?, ?, ?, ?, ?)
+		ON CONFLICT(project_name) DO UPDATE SET
+			domain = excluded.domain,
+			websocket_domain = excluded.websocket_domain,
+			database_name = excluded.database_name,
+			linked = excluded.linked,
+			updated_at = excluded.updated_at
+	`, resource.ProjectName, resource.Domain, resource.WebsocketDomain, resource.DatabaseName, linked, formatTime(resource.UpdatedAt))
+	return err
 }
 
 func upsertProject(db *sql.DB, project Project) error {

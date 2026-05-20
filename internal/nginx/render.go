@@ -1,6 +1,7 @@
 package nginx
 
 import (
+	"context"
 	_ "embed"
 	"fmt"
 	"os"
@@ -8,6 +9,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"syscall"
 
 	"herdlite/internal/certs"
 	"herdlite/internal/debugui"
@@ -153,6 +155,27 @@ func (m Manager) RemoveSite(project state.Project) error {
 	return m.RemoveWebsocket(project)
 }
 
+func (m Manager) ReloadIfRunning(ctx context.Context) (bool, error) {
+	pidPath := filepath.Join(m.Paths.NginxDir, "nginx.pid")
+	if !pidFileAlive(pidPath) {
+		removePIDIfStale(pidPath)
+		return false, nil
+	}
+
+	binary, err := exec.LookPath("nginx")
+	if err != nil {
+		return true, fmt.Errorf("nginx not found")
+	}
+	config := filepath.Join(m.Paths.NginxDir, "nginx.conf")
+	if err := runNginx(ctx, binary, "-t", "-c", config); err != nil {
+		return true, fmt.Errorf("validate nginx config: %w", err)
+	}
+	if err := runNginx(ctx, binary, "-s", "reload", "-c", config); err != nil {
+		return true, fmt.Errorf("reload nginx: %w", err)
+	}
+	return true, nil
+}
+
 func (m Manager) DebugConfigPath() string {
 	return filepath.Join(m.Paths.NginxSitesDir, debugui.Domain+".conf")
 }
@@ -196,4 +219,31 @@ func findNginxConfigFile(name string) (string, error) {
 		}
 	}
 	return "", fmt.Errorf("%s not found", name)
+}
+
+func pidFileAlive(pidPath string) bool {
+	data, err := os.ReadFile(pidPath)
+	if err != nil {
+		return false
+	}
+	pid, err := strconv.Atoi(strings.TrimSpace(string(data)))
+	if err != nil || pid <= 0 {
+		return false
+	}
+	return syscall.Kill(pid, 0) == nil
+}
+
+func removePIDIfStale(pidPath string) {
+	if _, err := os.Stat(pidPath); err == nil && !pidFileAlive(pidPath) {
+		_ = os.Remove(pidPath)
+	}
+}
+
+func runNginx(ctx context.Context, name string, args ...string) error {
+	cmd := exec.CommandContext(ctx, name, args...)
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("%w: %s", err, strings.TrimSpace(string(out)))
+	}
+	return nil
 }

@@ -5,14 +5,19 @@ repo="${HERDLITE_REPO:-dev-idkwhoami/herdlite}"
 bin_dir="${HERDLITE_BIN_DIR:-$HOME/.local/share/herdlite/bin}"
 version="${HERDLITE_VERSION:-latest}"
 run_install=0
+local_build=0
 
 usage() {
   cat <<EOF
-Usage: install.sh [--version <tag>] [--bin-dir <path>]
+Usage: install.sh [--version <tag>] [--bin-dir <path>] [--local]
 
 Environment:
-  HERDLITE_VERSION   Release tag, default: latest
+  HERDLITE_VERSION   Release tag, or local build version with --local, default: latest
   HERDLITE_BIN_DIR   Install directory, default: \$HOME/.local/share/herdlite/bin
+
+Options:
+  --local            Build and install the local checkout instead of downloading GitHub release
+  --run-install      Run 'herdlite install' after installing the binary
 EOF
 }
 
@@ -30,6 +35,10 @@ while [ "$#" -gt 0 ]; do
       ;;
     --run-install)
       run_install=1
+      shift
+      ;;
+    --local|--local-build)
+      local_build=1
       shift
       ;;
     -h|--help)
@@ -114,15 +123,25 @@ EOF
   echo "  source \"$shell_file\""
 }
 
-need curl
-need tar
 need uname
-need mktemp
 need find
 need head
 need mkdir
 need cp
 need chmod
+
+script_dir="$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)"
+
+if [ "$local_build" -eq 1 ]; then
+  need go
+  if [ -f "$script_dir/internal/daemon/ui/package.json" ]; then
+    need npm
+  fi
+else
+  need curl
+  need tar
+  need mktemp
+fi
 
 os="$(uname -s | tr '[:upper:]' '[:lower:]')"
 machine="$(uname -m)"
@@ -144,40 +163,54 @@ case "$machine" in
     ;;
 esac
 
-asset="herdlite-${os}-${arch}.tar.gz"
-base_url="https://github.com/${repo}/releases"
-if [ "$version" = "latest" ]; then
-  url="${base_url}/latest/download/${asset}"
-  checksum_url="${base_url}/latest/download/${asset}.sha256"
-else
-  url="${base_url}/download/${version}/${asset}"
-  checksum_url="${base_url}/download/${version}/${asset}.sha256"
-fi
-
-tmp="$(mktemp -d)"
-trap 'rm -rf "$tmp"' EXIT INT TERM
-
-echo "Downloading ${repo} ${version} (${os}/${arch})..."
-curl -fsSL "$url" -o "$tmp/$asset"
-
-if command -v sha256sum >/dev/null 2>&1; then
-  if curl -fsSL "$checksum_url" -o "$tmp/$asset.sha256"; then
-    (cd "$tmp" && sha256sum -c "$asset.sha256")
-  else
-    echo "Checksum not found; continuing without verification."
+if [ "$local_build" -eq 1 ]; then
+  build_version="$version"
+  if [ "$build_version" = "latest" ]; then
+    build_version="dev"
+  fi
+  echo "Building local Herdlite checkout (${os}/${arch})..."
+  (cd "$script_dir" && VERSION="$build_version" ./scripts/build.sh)
+  binary="$script_dir/bin/herdlite"
+  if [ ! -f "$binary" ]; then
+    echo "install.sh: local build did not produce $binary" >&2
+    exit 1
   fi
 else
-  echo "sha256sum not found; continuing without checksum verification."
-fi
+  asset="herdlite-${os}-${arch}.tar.gz"
+  base_url="https://github.com/${repo}/releases"
+  if [ "$version" = "latest" ]; then
+    url="${base_url}/latest/download/${asset}"
+    checksum_url="${base_url}/latest/download/${asset}.sha256"
+  else
+    url="${base_url}/download/${version}/${asset}"
+    checksum_url="${base_url}/download/${version}/${asset}.sha256"
+  fi
 
-tar -xzf "$tmp/$asset" -C "$tmp"
-binary="$(find "$tmp" -type f -name herdlite -perm -u+x | head -n 1)"
-if [ -z "$binary" ]; then
-  binary="$(find "$tmp" -type f -name herdlite | head -n 1)"
-fi
-if [ -z "$binary" ]; then
-  echo "install.sh: release archive did not contain a herdlite binary" >&2
-  exit 1
+  tmp="$(mktemp -d)"
+  trap 'rm -rf "$tmp"' EXIT INT TERM
+
+  echo "Downloading ${repo} ${version} (${os}/${arch})..."
+  curl -fsSL "$url" -o "$tmp/$asset"
+
+  if command -v sha256sum >/dev/null 2>&1; then
+    if curl -fsSL "$checksum_url" -o "$tmp/$asset.sha256"; then
+      (cd "$tmp" && sha256sum -c "$asset.sha256")
+    else
+      echo "Checksum not found; continuing without verification."
+    fi
+  else
+    echo "sha256sum not found; continuing without checksum verification."
+  fi
+
+  tar -xzf "$tmp/$asset" -C "$tmp"
+  binary="$(find "$tmp" -type f -name herdlite -perm -u+x | head -n 1)"
+  if [ -z "$binary" ]; then
+    binary="$(find "$tmp" -type f -name herdlite | head -n 1)"
+  fi
+  if [ -z "$binary" ]; then
+    echo "install.sh: release archive did not contain a herdlite binary" >&2
+    exit 1
+  fi
 fi
 
 mkdir -p "$bin_dir"

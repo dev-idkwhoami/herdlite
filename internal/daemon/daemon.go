@@ -54,7 +54,7 @@ func (m Manager) Start(ctx context.Context) error {
 		m.printf("Daemon is already running.\n")
 		m.printf("  pid:  %d\n", status.PID)
 		m.printf("  mail:  http://%s\n", mail.HTTPAddr)
-		m.printf("  debug: %s\n", debugui.BaseURL)
+		m.printf("  debug: %s\n", debugui.BaseAppURL)
 		return nil
 	}
 	removeStalePID(m.PIDPath())
@@ -94,7 +94,7 @@ func (m Manager) Start(ctx context.Context) error {
 			m.printf("Started Herdlite daemon.\n")
 			m.printf("  pid:  %d\n", status.PID)
 			m.printf("  mail:  http://%s\n", mail.HTTPAddr)
-			m.printf("  debug: %s\n", debugui.BaseURL)
+			m.printf("  debug: %s\n", debugui.BaseAppURL)
 			return nil
 		}
 		time.Sleep(100 * time.Millisecond)
@@ -160,7 +160,7 @@ func (s Service) Run(ctx context.Context) error {
 	fmt.Fprintln(s.Out, "Herdlite daemon started.")
 	fmt.Fprintf(s.Out, "Mail SMTP: %s\n", mail.SMTPAddr)
 	fmt.Fprintf(s.Out, "Mail HTTP: http://%s\n", mail.HTTPAddr)
-	fmt.Fprintf(s.Out, "Debug UI: %s\n", debugui.BaseURL)
+	fmt.Fprintf(s.Out, "Debug UI: %s\n", debugui.BaseAppURL)
 	if s.Token == "" {
 		s.Token = randomToken()
 	}

@@ -104,6 +104,19 @@ func allCommands() []command {
 			Run:         runUnlink,
 		},
 		{
+			Name:        "purge",
+			Usage:       "herdlite purge [--dry-run]",
+			Description: "remove unused Herdlite certs and databases",
+			Run:         runPurge,
+		},
+		{
+			Name:        "dns-sync",
+			Usage:       "herdlite dns-sync",
+			Description: "sync system DNS records",
+			Advanced:    true,
+			Run:         runDNSSync,
+		},
+		{
 			Name:        "start",
 			Usage:       "herdlite start",
 			Description: "start local hosting services",
@@ -133,6 +146,7 @@ func allCommands() []command {
 			Name:        "mail",
 			Usage:       "herdlite mail [list|show|open|raw|clear]",
 			Description: "view captured local mail",
+			Advanced:    true,
 			Run:         runMail,
 		},
 		{
