@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"herdlite/internal/queue"
+	"herdlite/internal/state"
 )
 
 func (s Service) registerQueueHandlers(mux *http.ServeMux) {
@@ -68,6 +69,24 @@ func (s Service) serveQueueRoute(w http.ResponseWriter, r *http.Request) {
 		status, err = manager.Start(context.Background(), project)
 	case "stop":
 		status, err = manager.Stop(project)
+	case "settings":
+		var settings state.QueueSettings
+		if err := json.NewDecoder(r.Body).Decode(&settings); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		wasRunning := manager.Status(project).Running
+		if _, err := s.Store.SetProjectQueueSettings(project.Name, settings); err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		if wasRunning {
+			if _, err = manager.Stop(project); err == nil {
+				status, err = manager.Start(context.Background(), project)
+			}
+		} else {
+			status = manager.Status(project)
+		}
 	default:
 		http.NotFound(w, r)
 		return

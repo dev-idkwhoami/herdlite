@@ -752,12 +752,19 @@ nav button [data-slot='badge'] {
 }
 
 .queue-item {
-	grid-template-columns: minmax(0, 1fr) auto;
-	align-items: center;
+	grid-template-columns: minmax(0, 1fr);
 	cursor: default;
+	gap: 14px;
 }
 
-.queue-item > div:first-child {
+.queue-summary {
+	display: grid;
+	grid-template-columns: minmax(0, 1fr) auto;
+	align-items: center;
+	gap: 16px;
+}
+
+.queue-summary > div:first-child {
 	display: grid;
 	gap: 4px;
 	min-width: 0;
@@ -767,6 +774,63 @@ nav button [data-slot='badge'] {
 	display: flex;
 	align-items: center;
 	gap: 8px;
+	flex-wrap: wrap;
+	justify-content: flex-end;
+}
+
+.queue-config {
+	display: grid;
+	grid-template-columns: repeat(auto-fit, minmax(144px, 1fr));
+	gap: 10px;
+}
+
+.queue-config label {
+	display: grid;
+	gap: 5px;
+	min-width: 0;
+}
+
+.queue-config label > span {
+	color: var(--muted-foreground);
+	font-size: 11px;
+	line-height: 1.2;
+}
+
+.queue-force {
+	align-content: start;
+}
+
+.queue-force .switch-button {
+	width: max-content;
+	min-width: 42px;
+	margin-top: 1px;
+}
+
+.queue-preview {
+	display: grid;
+	grid-template-columns: auto minmax(0, 1fr);
+	align-items: start;
+	gap: 8px;
+	color: var(--muted-foreground);
+}
+
+.queue-preview code {
+	display: block;
+	overflow-x: auto;
+	font-family: var(--font-mono);
+	font-size: 12px;
+	line-height: 1.45;
+	white-space: nowrap;
+}
+
+@media (max-width: 760px) {
+	.queue-summary {
+		grid-template-columns: minmax(0, 1fr);
+	}
+
+	.queue-actions {
+		justify-content: flex-start;
+	}
 }
 
 .detail-pane {

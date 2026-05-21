@@ -50,9 +50,27 @@ export type LogSource = {
 export type QueueWorker = {
 	project_name: string;
 	project_path: string;
+	php_version: string;
 	log_id: string;
 	running: boolean;
 	pid: number;
+	pids: number[];
+	command: string;
+	settings: QueueSettings;
+};
+
+export type QueueSettings = {
+	connection: string;
+	queue: string;
+	processes: number;
+	backoff: number;
+	sleep: number;
+	rest: number;
+	timeout: number;
+	tries: number;
+	memory: number;
+	env: string;
+	force: boolean;
 };
 
 export type EventMessage = {
@@ -63,7 +81,8 @@ export type EventMessage = {
 async function request<T>(url: string, init?: RequestInit): Promise<T> {
 	const response = await fetch(url, init);
 	if (!response.ok) {
-		throw new Error(`${response.status} ${response.statusText}`);
+		const body = await response.text();
+		throw new Error(body || `${response.status} ${response.statusText}`);
 	}
 	return response.json() as Promise<T>;
 }
@@ -138,6 +157,14 @@ export function stopQueue(projectName: string, token: string) {
 	return request<QueueWorker>(`/api/queues/${encodeURIComponent(projectName)}/stop`, {
 		method: 'POST',
 		headers: { 'X-Herdlite-Token': token },
+	});
+}
+
+export function saveQueueSettings(projectName: string, settings: QueueSettings, token: string) {
+	return request<QueueWorker>(`/api/queues/${encodeURIComponent(projectName)}/settings`, {
+		method: 'POST',
+		headers: { 'Content-Type': 'application/json', 'X-Herdlite-Token': token },
+		body: JSON.stringify(settings),
 	});
 }
 

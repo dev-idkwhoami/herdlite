@@ -30,6 +30,20 @@ type Project struct {
 	UpdatedAt  time.Time
 }
 
+type QueueSettings struct {
+	Connection string `json:"connection"`
+	Queue      string `json:"queue"`
+	Processes  int    `json:"processes"`
+	Backoff    int    `json:"backoff"`
+	Sleep      int    `json:"sleep"`
+	Rest       int    `json:"rest"`
+	Timeout    int    `json:"timeout"`
+	Tries      int    `json:"tries"`
+	Memory     int    `json:"memory"`
+	Env        string `json:"env"`
+	Force      bool   `json:"force"`
+}
+
 type ProjectOptions struct {
 	Name             string
 	Domain           string
@@ -511,6 +525,95 @@ func (s *Store) Projects() ([]Project, error) {
 		projects = append(projects, project)
 	}
 	return projects, rows.Err()
+}
+
+func (s *Store) ProjectQueueSettings(projectName string) (QueueSettings, error) {
+	db, err := s.open()
+	if err != nil {
+		return QueueSettings{}, err
+	}
+	defer db.Close()
+
+	return projectQueueSettings(db, projectName)
+}
+
+func (s *Store) SetProjectQueueSettings(projectName string, settings QueueSettings) (QueueSettings, error) {
+	settings = NormalizeQueueSettings(settings)
+
+	db, err := s.open()
+	if err != nil {
+		return QueueSettings{}, err
+	}
+	defer db.Close()
+
+	now := formatTime(time.Now().UTC())
+	_, err = db.Exec(`
+		INSERT INTO project_queue_settings (
+			project_name, connection, queue, processes, backoff, sleep, rest,
+			timeout, tries, memory, env, force, updated_at
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		ON CONFLICT(project_name) DO UPDATE SET
+			connection = excluded.connection,
+			queue = excluded.queue,
+			processes = excluded.processes,
+			backoff = excluded.backoff,
+			sleep = excluded.sleep,
+			rest = excluded.rest,
+			timeout = excluded.timeout,
+			tries = excluded.tries,
+			memory = excluded.memory,
+			env = excluded.env,
+			force = excluded.force,
+			updated_at = excluded.updated_at
+	`, projectName, settings.Connection, settings.Queue, settings.Processes, settings.Backoff, settings.Sleep,
+		settings.Rest, settings.Timeout, settings.Tries, settings.Memory, settings.Env, boolInt(settings.Force), now)
+	if err != nil {
+		return QueueSettings{}, err
+	}
+	return settings, nil
+}
+
+func DefaultQueueSettings() QueueSettings {
+	return QueueSettings{
+		Processes: 1,
+		Backoff:   0,
+		Sleep:     3,
+		Rest:      0,
+		Timeout:   60,
+		Tries:     1,
+		Memory:    128,
+	}
+}
+
+func NormalizeQueueSettings(settings QueueSettings) QueueSettings {
+	settings.Connection = strings.TrimSpace(settings.Connection)
+	settings.Queue = strings.TrimSpace(settings.Queue)
+	settings.Env = strings.TrimSpace(settings.Env)
+	if settings.Processes <= 0 {
+		settings.Processes = 1
+	}
+	if settings.Processes > 32 {
+		settings.Processes = 32
+	}
+	if settings.Backoff < 0 {
+		settings.Backoff = 0
+	}
+	if settings.Sleep < 0 {
+		settings.Sleep = 0
+	}
+	if settings.Rest < 0 {
+		settings.Rest = 0
+	}
+	if settings.Timeout <= 0 {
+		settings.Timeout = 60
+	}
+	if settings.Tries < 0 {
+		settings.Tries = 0
+	}
+	if settings.Memory <= 0 {
+		settings.Memory = 128
+	}
+	return settings
 }
 
 func (s *Store) PHPRuntimes() ([]PHPRuntime, error) {
@@ -1104,6 +1207,21 @@ func ensureSchema(db *sql.DB) error {
 			html TEXT NOT NULL,
 			captured_at TEXT NOT NULL
 		)`,
+		`CREATE TABLE IF NOT EXISTS project_queue_settings (
+			project_name TEXT PRIMARY KEY,
+			connection TEXT NOT NULL DEFAULT '',
+			queue TEXT NOT NULL DEFAULT '',
+			processes INTEGER NOT NULL DEFAULT 1,
+			backoff INTEGER NOT NULL DEFAULT 0,
+			sleep INTEGER NOT NULL DEFAULT 3,
+			rest INTEGER NOT NULL DEFAULT 0,
+			timeout INTEGER NOT NULL DEFAULT 60,
+			tries INTEGER NOT NULL DEFAULT 1,
+			memory INTEGER NOT NULL DEFAULT 128,
+			env TEXT NOT NULL DEFAULT '',
+			force INTEGER NOT NULL DEFAULT 0,
+			updated_at TEXT NOT NULL
+		)`,
 	}
 
 	for _, statement := range statements {
@@ -1235,6 +1353,47 @@ func projectByName(db *sql.DB, name string) (Project, bool, error) {
 		return Project{}, false, err
 	}
 	return project, true, nil
+}
+
+func projectQueueSettings(db *sql.DB, projectName string) (QueueSettings, error) {
+	row := db.QueryRow(`
+		SELECT connection, queue, processes, backoff, sleep, rest, timeout,
+		       tries, memory, env, force
+		FROM project_queue_settings
+		WHERE project_name = ?
+	`, projectName)
+
+	settings, err := scanQueueSettings(row)
+	if errors.Is(err, sql.ErrNoRows) {
+		return DefaultQueueSettings(), nil
+	}
+	if err != nil {
+		return QueueSettings{}, err
+	}
+	return NormalizeQueueSettings(settings), nil
+}
+
+func scanQueueSettings(scanner projectScanner) (QueueSettings, error) {
+	var settings QueueSettings
+	var force int
+	err := scanner.Scan(
+		&settings.Connection,
+		&settings.Queue,
+		&settings.Processes,
+		&settings.Backoff,
+		&settings.Sleep,
+		&settings.Rest,
+		&settings.Timeout,
+		&settings.Tries,
+		&settings.Memory,
+		&settings.Env,
+		&force,
+	)
+	if err != nil {
+		return QueueSettings{}, err
+	}
+	settings.Force = force == 1
+	return settings, nil
 }
 
 func upsertProjectResource(db *sql.DB, resource ProjectResource) error {

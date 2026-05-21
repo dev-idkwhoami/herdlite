@@ -19,6 +19,7 @@
 		mailDetail,
 		mailList,
 		queueWorkers,
+		saveQueueSettings,
 		session,
 		startQueue,
 		stopQueue,
@@ -27,6 +28,7 @@
 		type LogSource,
 		type MailDetail,
 		type MailSummary,
+		type QueueSettings,
 		type QueueWorker,
 		type View,
 	} from '$lib/api';
@@ -39,7 +41,10 @@
 		Moon,
 		RefreshCw,
 		Play,
+		RotateCcw,
+		Save,
 		ScrollText,
+		Settings2,
 		Square,
 		Sun,
 		Trash2,
@@ -77,6 +82,7 @@
 	let logKind = $state('');
 
 	let queues = $state<QueueWorker[]>([]);
+	let queueDrafts = $state<Record<string, QueueSettings>>({});
 
 	let staleMail = $state(0);
 	let staleDumps = $state(0);
@@ -211,7 +217,15 @@
 	}
 
 	async function loadQueues() {
-		queues = await queueWorkers();
+		const nextQueues = await queueWorkers();
+		const nextDrafts = { ...queueDrafts };
+		for (const worker of nextQueues) {
+			if (!nextDrafts[worker.project_name] || !queueSettingsDirty(worker)) {
+				nextDrafts[worker.project_name] = cloneQueueSettings(worker.settings);
+			}
+		}
+		queues = nextQueues;
+		queueDrafts = nextDrafts;
 	}
 
 	async function setQueue(projectName: string, action: 'start' | 'stop') {
@@ -221,6 +235,90 @@
 			await stopQueue(projectName, token);
 		}
 		await Promise.all([loadQueues(), loadLogs()]);
+	}
+
+	async function saveQueueConfig(worker: QueueWorker) {
+		const settings = queueDrafts[worker.project_name] ?? worker.settings;
+		const updated = await saveQueueSettings(worker.project_name, settings, token);
+		queues = queues.map((queue) => (queue.project_name === updated.project_name ? updated : queue));
+		queueDrafts = { ...queueDrafts, [updated.project_name]: cloneQueueSettings(updated.settings) };
+		await loadLogs();
+	}
+
+	function resetQueueConfig(worker: QueueWorker) {
+		queueDrafts = { ...queueDrafts, [worker.project_name]: cloneQueueSettings(worker.settings) };
+	}
+
+	function updateQueueConfig<K extends keyof QueueSettings>(projectName: string, key: K, value: QueueSettings[K]) {
+		const current = queueDrafts[projectName] ?? defaultQueueSettings();
+		queueDrafts = { ...queueDrafts, [projectName]: { ...current, [key]: value } };
+	}
+
+	function queueSettingsDirty(worker: QueueWorker) {
+		const draft = queueDrafts[worker.project_name];
+		return !!draft && JSON.stringify(normalizeQueueSettings(draft)) !== JSON.stringify(normalizeQueueSettings(worker.settings));
+	}
+
+	function cloneQueueSettings(settings: QueueSettings) {
+		return { ...settings };
+	}
+
+	function defaultQueueSettings(): QueueSettings {
+		return {
+			connection: '',
+			queue: '',
+			processes: 1,
+			backoff: 0,
+			sleep: 3,
+			rest: 0,
+			timeout: 60,
+			tries: 1,
+			memory: 128,
+			env: '',
+			force: false,
+		};
+	}
+
+	function normalizeQueueSettings(settings: QueueSettings) {
+		const normalized = { ...settings };
+		normalized.connection = normalized.connection.trim();
+		normalized.queue = normalized.queue.trim();
+		normalized.env = normalized.env.trim();
+		normalized.processes = clampNumber(normalized.processes, 1, 32, 1);
+		normalized.backoff = clampNumber(normalized.backoff, 0, 999999, 0);
+		normalized.sleep = clampNumber(normalized.sleep, 0, 999999, 0);
+		normalized.rest = clampNumber(normalized.rest, 0, 999999, 0);
+		normalized.timeout = clampNumber(normalized.timeout, 1, 999999, 60);
+		normalized.tries = clampNumber(normalized.tries, 0, 999999, 0);
+		normalized.memory = clampNumber(normalized.memory, 1, 999999, 128);
+		return normalized;
+	}
+
+	function clampNumber(value: number, min: number, max: number, fallback: number) {
+		if (!Number.isFinite(value)) return fallback;
+		return Math.min(max, Math.max(min, Math.trunc(value)));
+	}
+
+	function numberValue(event: Event) {
+		return Number((event.currentTarget as HTMLInputElement).value);
+	}
+
+	function queueCommand(settings: QueueSettings) {
+		const normalized = normalizeQueueSettings(settings);
+		const parts = ['php', 'artisan', 'queue:work'];
+		if (normalized.connection) parts.push(normalized.connection);
+		if (normalized.queue) parts.push(`--queue=${normalized.queue}`);
+		parts.push(
+			`--backoff=${normalized.backoff}`,
+			`--sleep=${normalized.sleep}`,
+			`--rest=${normalized.rest}`,
+			`--timeout=${normalized.timeout}`,
+			`--tries=${normalized.tries}`,
+			`--memory=${normalized.memory}`,
+		);
+		if (normalized.env) parts.push(`--env=${normalized.env}`);
+		if (normalized.force) parts.push('--force');
+		return parts.join(' ');
 	}
 
 	async function openQueueLog(worker: QueueWorker) {
@@ -691,19 +789,141 @@
 			<div class="single-pane">
 				<ScrollArea class="list-pane wide-list">
 					{#each queues as worker}
+						{@const draft = queueDrafts[worker.project_name] ?? worker.settings}
 						<div class="item queue-item">
-							<div>
-								<strong>{worker.project_name}</strong>
-								<span>{worker.running ? `PID ${worker.pid}` : 'Stopped'}</span>
-								<small>{worker.project_path}</small>
+							<div class="queue-summary">
+								<div>
+									<strong>{worker.project_name}</strong>
+									<span>
+										{worker.running
+											? `${worker.pids.length} running · PID ${worker.pid}`
+											: 'Stopped'}{worker.php_version ? ` · PHP ${worker.php_version}` : ''}
+									</span>
+									<small>{worker.project_path}</small>
+								</div>
+								<div class="queue-actions">
+									<Button variant="outline" size="sm" onclick={() => openQueueLog(worker)}><ScrollText />Log</Button>
+									{#if queueSettingsDirty(worker)}
+										<Button variant="outline" size="sm" onclick={() => resetQueueConfig(worker)}><RotateCcw />Reset</Button>
+										<Button variant="default" size="sm" onclick={() => saveQueueConfig(worker)}><Save />Save</Button>
+									{/if}
+									{#if worker.running}
+										<Button variant="destructive" size="sm" onclick={() => setQueue(worker.project_name, 'stop')}><Square />Stop</Button>
+									{:else}
+										<Button variant="default" size="sm" onclick={() => setQueue(worker.project_name, 'start')}><Play />Start</Button>
+									{/if}
+								</div>
 							</div>
-							<div class="queue-actions">
-								<Button variant="outline" size="sm" onclick={() => openQueueLog(worker)}><ScrollText />Log</Button>
-								{#if worker.running}
-									<Button variant="destructive" size="sm" onclick={() => setQueue(worker.project_name, 'stop')}><Square />Stop</Button>
-								{:else}
-									<Button variant="default" size="sm" onclick={() => setQueue(worker.project_name, 'start')}><Play />Start</Button>
-								{/if}
+
+							<div class="queue-config">
+								<label>
+									<span>Connection</span>
+									<Input
+										placeholder="default"
+										value={draft.connection}
+										oninput={(event) =>
+											updateQueueConfig(worker.project_name, 'connection', (event.currentTarget as HTMLInputElement).value)}
+									/>
+								</label>
+								<label>
+									<span>Queues</span>
+									<Input
+										placeholder="default"
+										value={draft.queue}
+										oninput={(event) =>
+											updateQueueConfig(worker.project_name, 'queue', (event.currentTarget as HTMLInputElement).value)}
+									/>
+								</label>
+								<label>
+									<span>Processes</span>
+									<Input
+										type="number"
+										min="1"
+										max="32"
+										value={draft.processes}
+										oninput={(event) => updateQueueConfig(worker.project_name, 'processes', numberValue(event))}
+									/>
+								</label>
+								<label>
+									<span>Backoff</span>
+									<Input
+										type="number"
+										min="0"
+										value={draft.backoff}
+										oninput={(event) => updateQueueConfig(worker.project_name, 'backoff', numberValue(event))}
+									/>
+								</label>
+								<label>
+									<span>Sleep</span>
+									<Input
+										type="number"
+										min="0"
+										value={draft.sleep}
+										oninput={(event) => updateQueueConfig(worker.project_name, 'sleep', numberValue(event))}
+									/>
+								</label>
+								<label>
+									<span>Rest</span>
+									<Input
+										type="number"
+										min="0"
+										value={draft.rest}
+										oninput={(event) => updateQueueConfig(worker.project_name, 'rest', numberValue(event))}
+									/>
+								</label>
+								<label>
+									<span>Timeout</span>
+									<Input
+										type="number"
+										min="1"
+										value={draft.timeout}
+										oninput={(event) => updateQueueConfig(worker.project_name, 'timeout', numberValue(event))}
+									/>
+								</label>
+								<label>
+									<span>Tries</span>
+									<Input
+										type="number"
+										min="0"
+										value={draft.tries}
+										oninput={(event) => updateQueueConfig(worker.project_name, 'tries', numberValue(event))}
+									/>
+								</label>
+								<label>
+									<span>Memory</span>
+									<Input
+										type="number"
+										min="1"
+										value={draft.memory}
+										oninput={(event) => updateQueueConfig(worker.project_name, 'memory', numberValue(event))}
+									/>
+								</label>
+								<label>
+									<span>Environment</span>
+									<Input
+										placeholder="default"
+										value={draft.env}
+										oninput={(event) =>
+											updateQueueConfig(worker.project_name, 'env', (event.currentTarget as HTMLInputElement).value)}
+									/>
+								</label>
+								<label class="queue-force">
+									<span>Force</span>
+									<button
+										class="switch-button"
+										class:active={draft.force}
+										role="switch"
+										aria-label="Force queue worker"
+										aria-checked={draft.force}
+										onclick={() => updateQueueConfig(worker.project_name, 'force', !draft.force)}
+									>
+										<span></span>
+									</button>
+								</label>
+							</div>
+							<div class="queue-preview">
+								<Settings2 size={14} />
+								<code>{queueCommand(draft)}</code>
 							</div>
 						</div>
 					{:else}

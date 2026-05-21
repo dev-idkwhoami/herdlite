@@ -51,6 +51,51 @@ func TestSetProjectPHPVersion(t *testing.T) {
 	}
 }
 
+func TestProjectQueueSettingsDefaultsAndPersistence(t *testing.T) {
+	store := NewStore(filepath.Join(t.TempDir(), "herdlite.db"))
+	projectPath := laravelProject(t, "app")
+
+	project, err := store.AddProjectWithOptions(projectPath, ProjectOptions{PHPVersion: "8.4.1"})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	defaults, err := store.ProjectQueueSettings(project.Name)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if defaults.Processes != 1 || defaults.Sleep != 3 || defaults.Tries != 1 || defaults.Memory != 128 {
+		t.Fatalf("unexpected defaults: %+v", defaults)
+	}
+
+	settings, err := store.SetProjectQueueSettings(project.Name, QueueSettings{
+		Connection: " redis ",
+		Queue:      "critical,default",
+		Processes:  3,
+		Backoff:    -1,
+		Sleep:      5,
+		Timeout:    90,
+		Tries:      2,
+		Memory:     256,
+		Env:        " local ",
+		Force:      true,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if settings.Connection != "redis" || settings.Env != "local" || settings.Backoff != 0 {
+		t.Fatalf("expected normalized settings, got %+v", settings)
+	}
+
+	persisted, err := store.ProjectQueueSettings(project.Name)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if persisted.Connection != "redis" || persisted.Queue != "critical,default" || persisted.Processes != 3 || !persisted.Force {
+		t.Fatalf("unexpected persisted settings: %+v", persisted)
+	}
+}
+
 func TestProjectByNameOrDomain(t *testing.T) {
 	store := NewStore(filepath.Join(t.TempDir(), "herdlite.db"))
 	projectPath := laravelProject(t, "my-app")
