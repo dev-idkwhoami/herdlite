@@ -76,6 +76,9 @@ func TestWriteSiteConfig(t *testing.T) {
 	if !strings.Contains(content, "root "+filepath.Join(root, "app", "public")+";") {
 		t.Fatalf("expected public root in config, got:\n%s", content)
 	}
+	if !strings.Contains(content, "client_max_body_size 128m;") {
+		t.Fatalf("expected upload body size limit in config, got:\n%s", content)
+	}
 	if !strings.Contains(content, "fastcgi_pass unix:"+expectedSocket+";") {
 		t.Fatalf("expected PHP-FPM socket in config, got:\n%s", content)
 	}

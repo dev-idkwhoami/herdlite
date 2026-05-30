@@ -16,6 +16,7 @@ var requiredModules = []string{
 	"curl",
 	"dom",
 	"fileinfo",
+	"gd",
 	"intl",
 	"mbstring",
 	"openssl",
@@ -48,6 +49,9 @@ func ValidateRuntime(runtime state.PHPRuntime) error {
 		return err
 	}
 	if err := validatePHPModules(runtime); err != nil {
+		return err
+	}
+	if err := validateGDFeatures(runtime); err != nil {
 		return err
 	}
 	if err := validateFPMConfig(runtime); err != nil {
@@ -84,6 +88,14 @@ func validatePHPModules(runtime state.PHPRuntime) error {
 	}
 	if len(missing) > 0 {
 		return fmt.Errorf("missing required PHP modules: %s", strings.Join(missing, ", "))
+	}
+	return nil
+}
+
+func validateGDFeatures(runtime state.PHPRuntime) error {
+	cmd := exec.Command(runtime.PHPBinary, "-r", "exit((int) empty(gd_info()['WebP Support']));")
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("gd missing WebP support")
 	}
 	return nil
 }

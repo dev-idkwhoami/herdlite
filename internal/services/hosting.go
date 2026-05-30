@@ -12,6 +12,7 @@ import (
 	"syscall"
 	"time"
 
+	"herdlite/internal/certs"
 	"herdlite/internal/daemon"
 	"herdlite/internal/nginx"
 	"herdlite/internal/paths"
@@ -50,6 +51,39 @@ func (m HostingManager) Start(ctx context.Context) error {
 	nginxManager := nginx.Manager{Paths: m.Paths}
 	if _, err := nginxManager.WriteBaseConfig(); err != nil {
 		return fmt.Errorf("render nginx config: %w", err)
+	}
+	for _, project := range projects {
+		if !project.Enabled {
+			if err := nginxManager.RemoveSite(project); err != nil {
+				return fmt.Errorf("remove disabled nginx site config for %s: %w", project.Name, err)
+			}
+			continue
+		}
+		runtime, found, err := m.Store.PHPRuntimeForRequest(project.PHPVersion)
+		if err != nil {
+			return err
+		}
+		if !found {
+			return fmt.Errorf("PHP %s for project %s is not installed", project.PHPVersion, project.Name)
+		}
+		cert, err := (certs.Manager{Paths: m.Paths}).EnsureSite(project.Domain)
+		if err != nil {
+			return fmt.Errorf("ensure certificate for %s: %w", project.Domain, err)
+		}
+		if _, err := nginxManager.WriteSite(project, runtime, cert); err != nil {
+			return fmt.Errorf("render nginx site config for %s: %w", project.Name, err)
+		}
+		if project.Websocket.Enabled {
+			wsCert, err := (certs.Manager{Paths: m.Paths}).EnsureSite(project.Websocket.Domain)
+			if err != nil {
+				return fmt.Errorf("ensure websocket certificate for %s: %w", project.Websocket.Domain, err)
+			}
+			if _, err := nginxManager.WriteWebsocket(project, wsCert); err != nil {
+				return fmt.Errorf("render nginx websocket config for %s: %w", project.Name, err)
+			}
+		} else if err := nginxManager.RemoveWebsocket(project); err != nil {
+			return fmt.Errorf("remove nginx websocket config for %s: %w", project.Name, err)
+		}
 	}
 	if _, err := nginxManager.WriteDebugSite(); err != nil {
 		return fmt.Errorf("render nginx debug site: %w", err)

@@ -12,6 +12,8 @@ server {
     server_name {{DOMAIN}};
     root {{PUBLIC_ROOT}};
 
+    client_max_body_size 128m;
+
     ssl_certificate {{CERT_PATH}};
     ssl_certificate_key {{KEY_PATH}};
 

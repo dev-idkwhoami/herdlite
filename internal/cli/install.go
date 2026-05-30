@@ -47,6 +47,7 @@ func runInstall(a *app.App, args []string) int {
 	fmt.Fprintf(a.Out, "  - config dir:  %s\n", target.Paths.ConfigDir)
 	fmt.Fprintf(a.Out, "  - data dir:    %s\n", target.Paths.DataDir)
 	fmt.Fprintln(a.Out, "  - install required official pacman build/runtime packages")
+	fmt.Fprintln(a.Out, "  - install required AUR packages with yay")
 	fmt.Fprintln(a.Out, "  - resolve latest upstream PHP release")
 	fmt.Fprintln(a.Out, "  - download, build, and install latest PHP as default runtime")
 	fmt.Fprintln(a.Out, "  - install Herdlite-managed Composer")
@@ -55,6 +56,7 @@ func runInstall(a *app.App, args []string) int {
 	fmt.Fprintln(a.Out, "  - enable user-run nginx to bind ports 80 and 443")
 	fmt.Fprintln(a.Out, "  - install pacman hook to restore nginx low-port binding after updates")
 	fmt.Fprintln(a.Out, "  - install shell integration")
+	fmt.Fprintln(a.Out, "  - start local hosting services")
 	fmt.Fprintln(a.Out)
 
 	packages := install.PackageInstaller{
@@ -66,6 +68,10 @@ func runInstall(a *app.App, args []string) int {
 
 	if dryRun {
 		if err := packages.InstallPacmanPackages(assumeYes, true); err != nil {
+			fmt.Fprintf(a.Err, "install: %v\n", err)
+			return 1
+		}
+		if err := packages.InstallYayPackages(target.Username, assumeYes, true); err != nil {
 			fmt.Fprintf(a.Err, "install: %v\n", err)
 			return 1
 		}
@@ -93,6 +99,7 @@ func runInstall(a *app.App, args []string) int {
 		fmt.Fprintf(a.Out, "Write PATH shims: %s\n", target.Paths.ShimsDir)
 		fmt.Fprintf(a.Out, "Append zsh hook: %s\n", target.HomeDir+"/.zshrc")
 		fmt.Fprintf(a.Out, "Install Composer: %s\n", target.Paths.ComposerDir+"/composer.phar")
+		fmt.Fprintln(a.Out, "Start local hosting services")
 		fmt.Fprintln(a.Out)
 		fmt.Fprintln(a.Out, "Dry run only; no privileged system changes were made.")
 		return 0
@@ -105,6 +112,10 @@ func runInstall(a *app.App, args []string) int {
 
 	if err := packages.InstallPacmanPackages(assumeYes, false); err != nil {
 		fmt.Fprintf(a.Err, "install: package installation failed: %v\n", err)
+		return 1
+	}
+	if err := packages.InstallYayPackages(target.Username, assumeYes, false); err != nil {
+		fmt.Fprintf(a.Err, "install: AUR package installation failed: %v\n", err)
 		return 1
 	}
 
@@ -211,6 +222,10 @@ func runInstall(a *app.App, args []string) int {
 			fmt.Fprintf(a.Err, "install: Composer install failed: %v\n", err)
 			return 1
 		}
+		if err := runStartAsTargetUser(target.Username); err != nil {
+			fmt.Fprintf(a.Err, "install: hosting start failed: %v\n", err)
+			return 1
+		}
 	} else {
 		if code := runPHPInstall(a, []string{"latest"}); code != 0 {
 			return code
@@ -218,11 +233,14 @@ func runInstall(a *app.App, args []string) int {
 		if code := runComposerInstall(a, nil); code != 0 {
 			return code
 		}
+		if code := runStart(a, nil); code != 0 {
+			return code
+		}
 	}
 
 	fmt.Fprintln(a.Out)
-	fmt.Fprintln(a.Out, "Created Herdlite user directories and handled official pacman dependencies.")
-	fmt.Fprintln(a.Out, "Latest PHP runtime, Composer, DNS, local CA trust, nginx low-port binding, nginx update hook, and zsh integration are configured.")
+	fmt.Fprintln(a.Out, "Created Herdlite user directories and handled pacman/AUR dependencies.")
+	fmt.Fprintln(a.Out, "Latest PHP runtime, Composer, DNS, local CA trust, nginx low-port binding, nginx update hook, zsh integration, and hosting services are configured.")
 	return 0
 }
 
@@ -331,6 +349,24 @@ func runComposerInstallAsTargetUser(username string) error {
 	}
 
 	args := []string{"-u", username, "-H", executable, "composer", "install"}
+	cmd := exec.Command(sudo, args...)
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	cmd.Stdin = os.Stdin
+	return cmd.Run()
+}
+
+func runStartAsTargetUser(username string) error {
+	sudo, err := exec.LookPath("sudo")
+	if err != nil {
+		return fmt.Errorf("sudo not found")
+	}
+	executable, err := os.Executable()
+	if err != nil {
+		return fmt.Errorf("resolve herdlite executable: %w", err)
+	}
+
+	args := []string{"-u", username, "-H", executable, "start"}
 	cmd := exec.Command(sudo, args...)
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr

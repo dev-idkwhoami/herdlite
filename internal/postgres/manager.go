@@ -33,13 +33,7 @@ func (m Manager) Init(ctx context.Context) error {
 	if initialized(m.DataDir()) {
 		m.printf("PostgreSQL data directory already initialized.\n")
 		m.printf("  data: %s\n", m.DataDir())
-		if err := m.Start(ctx); err != nil {
-			return err
-		}
-		if err := m.EnsureRootRole(ctx); err != nil {
-			return err
-		}
-		return nil
+		return m.Start(ctx)
 	}
 	if err := os.MkdirAll(m.DataDir(), 0o700); err != nil {
 		return err
@@ -55,7 +49,7 @@ func (m Manager) Init(ctx context.Context) error {
 	m.printf("PostgreSQL data directory initialized.\n")
 	m.printf("  data: %s\n", m.DataDir())
 	m.printf("  superuser: root\n")
-	return nil
+	return m.Start(ctx)
 }
 
 func (m Manager) Start(ctx context.Context) error {
@@ -78,7 +72,7 @@ func (m Manager) Start(ctx context.Context) error {
 		m.printf("PostgreSQL is already running.\n")
 		m.printf("  data:   %s\n", m.DataDir())
 		m.printf("  socket: %s\n", m.SocketDir())
-		return nil
+		return m.ensureDefaultDatabase(ctx)
 	}
 	opts := "-k " + m.SocketDir() + " -h 127.0.0.1"
 	m.printf("Starting PostgreSQL...\n")
@@ -89,7 +83,7 @@ func (m Manager) Start(ctx context.Context) error {
 	m.printf("  data:   %s\n", m.DataDir())
 	m.printf("  socket: %s\n", m.SocketDir())
 	m.printf("  log:    %s\n", m.LogPath())
-	return nil
+	return m.ensureDefaultDatabase(ctx)
 }
 
 func (m Manager) Stop(ctx context.Context) error {
@@ -154,7 +148,7 @@ func (m Manager) EnsureDatabase(ctx context.Context, name string) error {
 		m.printf("Warning: failed to check PostgreSQL database %s: %v\n", name, err)
 	} else if exists {
 		m.printf("PostgreSQL database already exists: %s\n", name)
-		return nil
+		return m.EnsureVectorExtension(ctx, name)
 	}
 
 	cmd := exec.CommandContext(ctx, createdb, "-h", "127.0.0.1", "-U", "root", "-O", "root", name)
@@ -165,7 +159,7 @@ func (m Manager) EnsureDatabase(ctx context.Context, name string) error {
 		return fmt.Errorf("create database %s: %w", name, err)
 	}
 	m.printf("Created PostgreSQL database: %s\n", name)
-	return nil
+	return m.EnsureVectorExtension(ctx, name)
 }
 
 func (m Manager) DropDatabase(ctx context.Context, name string) error {
@@ -202,7 +196,7 @@ func (m Manager) EnsureRootRole(ctx context.Context) error {
 		return fmt.Errorf("psql not found")
 	}
 	sql := "DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'root') THEN CREATE ROLE root LOGIN SUPERUSER; END IF; END $$;"
-	cmd := exec.CommandContext(ctx, psql, "-h", "127.0.0.1", "-d", "postgres", "-v", "ON_ERROR_STOP=1", "-c", sql)
+	cmd := exec.CommandContext(ctx, psql, "-h", "127.0.0.1", "-U", "root", "-d", "postgres", "-v", "ON_ERROR_STOP=1", "-c", sql)
 	cmd.Stdout = m.Out
 	cmd.Stderr = m.Out
 	cmd.Stdin = os.Stdin
@@ -210,6 +204,32 @@ func (m Manager) EnsureRootRole(ctx context.Context) error {
 		return fmt.Errorf("ensure PostgreSQL root role: %w", err)
 	}
 	m.printf("Ensured PostgreSQL role: root\n")
+	return nil
+}
+
+func (m Manager) ensureDefaultDatabase(ctx context.Context) error {
+	if err := m.EnsureRootRole(ctx); err != nil {
+		return err
+	}
+	return m.EnsureVectorExtension(ctx, "postgres")
+}
+
+func (m Manager) EnsureVectorExtension(ctx context.Context, database string) error {
+	if !validDatabaseName(database) {
+		return fmt.Errorf("invalid database name %q", database)
+	}
+	psql, err := exec.LookPath("psql")
+	if err != nil {
+		return fmt.Errorf("psql not found")
+	}
+	cmd := exec.CommandContext(ctx, psql, "-h", "127.0.0.1", "-U", "root", "-d", database, "-v", "ON_ERROR_STOP=1", "-c", "CREATE EXTENSION IF NOT EXISTS vector;")
+	cmd.Stdout = m.Out
+	cmd.Stderr = m.Out
+	cmd.Stdin = os.Stdin
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("ensure PostgreSQL vector extension in %s: %w", database, err)
+	}
+	m.printf("Ensured PostgreSQL extension in %s: vector\n", database)
 	return nil
 }
 
