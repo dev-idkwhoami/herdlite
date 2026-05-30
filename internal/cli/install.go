@@ -53,6 +53,7 @@ func runInstall(a *app.App, args []string) int {
 	fmt.Fprintln(a.Out, "  - detect DNS resolver and configure Herdlite-managed .test hosts")
 	fmt.Fprintln(a.Out, "  - create and trust local CA in system and browser trust stores")
 	fmt.Fprintln(a.Out, "  - enable user-run nginx to bind ports 80 and 443")
+	fmt.Fprintln(a.Out, "  - install pacman hook to restore nginx low-port binding after updates")
 	fmt.Fprintln(a.Out, "  - install shell integration")
 	fmt.Fprintln(a.Out)
 
@@ -75,6 +76,14 @@ func runInstall(a *app.App, args []string) int {
 			return 1
 		}
 		if err := system.ConfigureTestDNS(dnsConfig, true); err != nil {
+			fmt.Fprintf(a.Err, "install: %v\n", err)
+			return 1
+		}
+		if err := system.EnableLowPortBinding("", true); err != nil {
+			fmt.Fprintf(a.Err, "install: %v\n", err)
+			return 1
+		}
+		if err := system.InstallLowPortBindingHook("", true); err != nil {
 			fmt.Fprintf(a.Err, "install: %v\n", err)
 			return 1
 		}
@@ -125,11 +134,19 @@ func runInstall(a *app.App, args []string) int {
 		fmt.Fprintf(a.Err, "install: nginx low-port setup failed: %v\n", err)
 		return 1
 	}
+	if err := system.InstallLowPortBindingHook("", false); err != nil {
+		fmt.Fprintf(a.Err, "install: nginx low-port hook setup failed: %v\n", err)
+		return 1
+	}
 	if !hadCap {
 		if err := setTargetMeta(target, "nginx_cap_added_by_herdlite", "true"); err != nil {
 			fmt.Fprintf(a.Err, "install: record nginx capability ownership: %v\n", err)
 			return 1
 		}
+	}
+	if err := setTargetMeta(target, "nginx_cap_hook_added_by_herdlite", "true"); err != nil {
+		fmt.Fprintf(a.Err, "install: record nginx capability hook ownership: %v\n", err)
+		return 1
 	}
 	dnsConfig, err := dns.HostRecordConfig(targetStore(target))
 	if err != nil {
@@ -205,7 +222,7 @@ func runInstall(a *app.App, args []string) int {
 
 	fmt.Fprintln(a.Out)
 	fmt.Fprintln(a.Out, "Created Herdlite user directories and handled official pacman dependencies.")
-	fmt.Fprintln(a.Out, "Latest PHP runtime, Composer, DNS, local CA trust, nginx low-port binding, and zsh integration are configured.")
+	fmt.Fprintln(a.Out, "Latest PHP runtime, Composer, DNS, local CA trust, nginx low-port binding, nginx update hook, and zsh integration are configured.")
 	return 0
 }
 

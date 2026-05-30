@@ -13,6 +13,7 @@ const archTrustAnchor = "/etc/ca-certificates/trust-source/anchors/herdlite-loca
 const networkManagerHerdliteConf = "/etc/NetworkManager/conf.d/herdlite.conf"
 const networkManagerDNSMasqConf = "/etc/NetworkManager/dnsmasq.d/herdlite-test.conf"
 const nssCANickname = "Herdlite Local Development CA"
+const nginxCapabilityHookPath = "/etc/pacman.d/hooks/herdlite-nginx-capability.hook"
 
 type SystemManager struct {
 	Out io.Writer
@@ -187,6 +188,57 @@ func (s SystemManager) EnableLowPortBinding(binary string, dryRun bool) error {
 	return cmd.Run()
 }
 
+func (s SystemManager) InstallLowPortBindingHook(binary string, dryRun bool) error {
+	if dryRun {
+		if binary == "" {
+			binary = "nginx"
+		}
+		s.printf("Install nginx package hook: %s\n", nginxCapabilityHookPath)
+		s.printf("Hook action: setcap cap_net_bind_service=+ep %s after nginx install/upgrade\n", binary)
+		return nil
+	}
+
+	if binary == "" {
+		var err error
+		binary, err = exec.LookPath("nginx")
+		if err != nil {
+			return fmt.Errorf("nginx not found")
+		}
+	}
+
+	if os.Geteuid() != 0 {
+		return fmt.Errorf("installing nginx capability hook requires root")
+	}
+
+	content := nginxCapabilityHookContent(binary)
+	s.printf("Install nginx package hook: %s\n", nginxCapabilityHookPath)
+
+	if existing, err := os.ReadFile(nginxCapabilityHookPath); err == nil {
+		if string(existing) == content {
+			return nil
+		}
+		return fmt.Errorf("%s already exists with different content", nginxCapabilityHookPath)
+	} else if !os.IsNotExist(err) {
+		return err
+	}
+
+	if err := os.MkdirAll(filepath.Dir(nginxCapabilityHookPath), 0o755); err != nil {
+		return err
+	}
+	return os.WriteFile(nginxCapabilityHookPath, []byte(content), 0o644)
+}
+
+func (s SystemManager) RemoveLowPortBindingHook(dryRun bool) error {
+	s.printf("Remove nginx package hook if Herdlite recorded ownership: %s\n", nginxCapabilityHookPath)
+	if dryRun {
+		return nil
+	}
+	if os.Geteuid() != 0 {
+		return fmt.Errorf("removing nginx capability hook requires root")
+	}
+	return removeIfExists(nginxCapabilityHookPath)
+}
+
 func (s SystemManager) runAsTarget(target TargetUser, name string, args ...string) error {
 	command := name
 	commandArgs := args
@@ -203,6 +255,21 @@ func (s SystemManager) runAsTarget(target TargetUser, name string, args ...strin
 	cmd.Stdout = s.Out
 	cmd.Stderr = s.Out
 	return cmd.Run()
+}
+
+func nginxCapabilityHookContent(binary string) string {
+	return fmt.Sprintf(`[Trigger]
+Operation = Install
+Operation = Upgrade
+Type = Package
+Target = nginx
+
+[Action]
+Description = Restoring Herdlite nginx low-port binding capability...
+When = PostTransaction
+Depends = libcap
+Exec = /usr/bin/setcap cap_net_bind_service=+ep %s
+`, binary)
 }
 
 func (s SystemManager) runAsTargetQuiet(target TargetUser, name string, args ...string) error {

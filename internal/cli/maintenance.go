@@ -43,6 +43,7 @@ func runRepair(a *app.App, args []string) int {
 		fmt.Fprintln(a.Out, "  - ensure user directories")
 		fmt.Fprintln(a.Out, "  - trust local CA in system and browser trust stores")
 		fmt.Fprintln(a.Out, "  - enable nginx low-port binding")
+		fmt.Fprintln(a.Out, "  - install pacman hook to restore nginx low-port binding after updates")
 		fmt.Fprintln(a.Out, "  - configure Herdlite-managed .test hosts")
 		fmt.Fprintln(a.Out, "  - render nginx base config")
 		fmt.Fprintln(a.Out, "  - render nginx debug site config")
@@ -86,9 +87,19 @@ func repairSystem(a *app.App, target install.TargetUser, dryRun bool) int {
 		fmt.Fprintf(a.Err, "repair: nginx low-port setup failed: %v\n", err)
 		return 1
 	}
+	if err := system.InstallLowPortBindingHook("", dryRun); err != nil {
+		fmt.Fprintf(a.Err, "repair: nginx low-port hook setup failed: %v\n", err)
+		return 1
+	}
 	if !dryRun && !hadCap {
 		if err := setTargetMeta(target, "nginx_cap_added_by_herdlite", "true"); err != nil {
 			fmt.Fprintf(a.Err, "repair: record nginx capability ownership: %v\n", err)
+			return 1
+		}
+	}
+	if !dryRun {
+		if err := setTargetMeta(target, "nginx_cap_hook_added_by_herdlite", "true"); err != nil {
+			fmt.Fprintf(a.Err, "repair: record nginx capability hook ownership: %v\n", err)
 			return 1
 		}
 	}
@@ -184,6 +195,7 @@ func runUninstall(a *app.App, args []string) int {
 	fmt.Fprintln(a.Out, "  - stop Herdlite hosting services")
 	fmt.Fprintln(a.Out, "  - remove trusted local CA from system and browser trust stores")
 	fmt.Fprintln(a.Out, "  - leave nginx low-port capability unchanged")
+	fmt.Fprintln(a.Out, "  - remove Herdlite nginx update hook if Herdlite recorded ownership")
 	fmt.Fprintln(a.Out, "  - comment out Herdlite .test DNS config")
 	fmt.Fprintln(a.Out, "  - comment out zsh integration and ~/.zshrc hook")
 	if purge {
@@ -228,6 +240,18 @@ func uninstallSystem(a *app.App, target install.TargetUser, purge bool, dryRun b
 		}
 	} else {
 		fmt.Fprintln(a.Out, "Leave nginx low-port capability unchanged; Herdlite did not record ownership.")
+	}
+	hookOwned, _, _ := targetStore(target).MetaValue("nginx_cap_hook_added_by_herdlite")
+	if hookOwned == "true" {
+		if err := system.RemoveLowPortBindingHook(dryRun); err != nil {
+			fmt.Fprintf(a.Err, "uninstall: nginx capability hook handling failed: %v\n", err)
+			return 1
+		}
+		if !dryRun {
+			_ = deleteTargetMeta(target, "nginx_cap_hook_added_by_herdlite")
+		}
+	} else {
+		fmt.Fprintln(a.Out, "Leave nginx update hook unchanged; Herdlite did not record ownership.")
 	}
 	if err := system.DisableTestDNS(dryRun); err != nil {
 		fmt.Fprintf(a.Err, "uninstall: DNS disable failed: %v\n", err)
