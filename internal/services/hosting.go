@@ -148,10 +148,15 @@ func (m HostingManager) requiredPHPRuntimes(projects []state.Project) ([]state.P
 }
 
 func (m HostingManager) startFPM(ctx context.Context, runtime state.PHPRuntime) error {
-	paths := phpmanager.ConfigPathsForPrefix(runtime.Prefix)
 	if _, err := phpmanager.RenderConfigForPaths(runtime.Prefix, m.Paths); err != nil {
 		return fmt.Errorf("render PHP-FPM config for %s: %w", runtime.Version, err)
 	}
+	return m.startConfiguredFPM(ctx, runtime)
+}
+
+// startConfiguredFPM preserves existing runtime configuration during update restoration.
+func (m HostingManager) startConfiguredFPM(ctx context.Context, runtime state.PHPRuntime) error {
+	paths := phpmanager.ConfigPathsForPrefix(runtime.Prefix)
 	if pidAlive(paths.PID) {
 		m.printf("PHP-FPM %s already running.\n", runtime.Version)
 		return nil

@@ -136,8 +136,7 @@ func (m Manager) Stop(project state.Project) (WorkerStatus, error) {
 		}
 		time.Sleep(100 * time.Millisecond)
 	}
-	_ = os.Remove(m.pidPath(project))
-	return m.status(project), nil
+	return m.status(project), fmt.Errorf("queue workers for %s did not stop; PID file retained", project.Name)
 }
 
 func (m Manager) LogPath(project state.Project) string {

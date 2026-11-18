@@ -8,11 +8,13 @@ import (
 
 func runNode(a *app.App, args []string) int {
 	if len(args) == 0 || hasHelp(args) {
-		fmt.Fprintln(a.Out, "Usage: herdlite node global <version>")
+		fmt.Fprintln(a.Out, "Usage: herdlite node <global|update|upgrade>")
 		return 0
 	}
 
 	switch args[0] {
+	case "update", "upgrade":
+		return componentUpdate("node")(a, args)
 	case "global":
 		return runNodeGlobal(a, args[1:])
 	default:

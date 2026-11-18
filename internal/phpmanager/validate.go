@@ -2,6 +2,7 @@ package phpmanager
 
 import (
 	"bytes"
+	"context"
 	"fmt"
 	"os"
 	"os/exec"
@@ -39,29 +40,33 @@ var requiredModules = []string{
 }
 
 func ValidateRuntime(runtime state.PHPRuntime) error {
+	return ValidateRuntimeContext(context.Background(), runtime)
+}
+
+func ValidateRuntimeContext(ctx context.Context, runtime state.PHPRuntime) error {
 	if err := executable(runtime.PHPBinary); err != nil {
 		return err
 	}
 	if err := executable(runtime.PHPFPMBinary); err != nil {
 		return err
 	}
-	if err := validatePHPVersion(runtime); err != nil {
+	if err := validatePHPVersion(ctx, runtime); err != nil {
 		return err
 	}
-	if err := validatePHPModules(runtime); err != nil {
+	if err := validatePHPModules(ctx, runtime); err != nil {
 		return err
 	}
-	if err := validateGDFeatures(runtime); err != nil {
+	if err := validateGDFeatures(ctx, runtime); err != nil {
 		return err
 	}
-	if err := validateFPMConfig(runtime); err != nil {
+	if err := validateFPMConfig(ctx, runtime); err != nil {
 		return err
 	}
 	return nil
 }
 
-func validatePHPVersion(runtime state.PHPRuntime) error {
-	cmd := exec.Command(runtime.PHPBinary, "-r", "echo PHP_VERSION;")
+func validatePHPVersion(ctx context.Context, runtime state.PHPRuntime) error {
+	cmd := exec.CommandContext(ctx, runtime.PHPBinary, "-r", "echo PHP_VERSION;")
 	out, err := cmd.Output()
 	if err != nil {
 		return fmt.Errorf("php version check failed: %w", err)
@@ -73,8 +78,8 @@ func validatePHPVersion(runtime state.PHPRuntime) error {
 	return nil
 }
 
-func validatePHPModules(runtime state.PHPRuntime) error {
-	cmd := exec.Command(runtime.PHPBinary, "-m")
+func validatePHPModules(ctx context.Context, runtime state.PHPRuntime) error {
+	cmd := exec.CommandContext(ctx, runtime.PHPBinary, "-m")
 	out, err := cmd.Output()
 	if err != nil {
 		return fmt.Errorf("php module check failed: %w", err)
@@ -92,21 +97,21 @@ func validatePHPModules(runtime state.PHPRuntime) error {
 	return nil
 }
 
-func validateGDFeatures(runtime state.PHPRuntime) error {
-	cmd := exec.Command(runtime.PHPBinary, "-r", "exit((int) empty(gd_info()['WebP Support']));")
+func validateGDFeatures(ctx context.Context, runtime state.PHPRuntime) error {
+	cmd := exec.CommandContext(ctx, runtime.PHPBinary, "-r", "exit((int) empty(gd_info()['WebP Support']));")
 	if err := cmd.Run(); err != nil {
 		return fmt.Errorf("gd missing WebP support")
 	}
 	return nil
 }
 
-func validateFPMConfig(runtime state.PHPRuntime) error {
+func validateFPMConfig(ctx context.Context, runtime state.PHPRuntime) error {
 	config := filepath.Join(runtime.Prefix, "etc", "php-fpm.conf")
 	if _, err := os.Stat(config); err != nil {
 		return fmt.Errorf("php-fpm config missing: %w", err)
 	}
 
-	cmd := exec.Command(runtime.PHPFPMBinary, "-t", "--fpm-config", config)
+	cmd := exec.CommandContext(ctx, runtime.PHPFPMBinary, "-t", "--fpm-config", config)
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
 	cmd.Stdout = &stderr

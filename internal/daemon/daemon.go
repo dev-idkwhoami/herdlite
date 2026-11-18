@@ -126,9 +126,7 @@ func (m Manager) Stop() error {
 		}
 		time.Sleep(100 * time.Millisecond)
 	}
-	_ = os.Remove(m.PIDPath())
-	m.printf("Stopped Herdlite daemon.\n")
-	return nil
+	return fmt.Errorf("daemon process %d did not stop; PID file retained", pid)
 }
 
 func (m Manager) Status() Status {

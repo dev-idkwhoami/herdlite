@@ -15,6 +15,7 @@ const releasesURL = "https://api.github.com/repos/php/php-src/releases?per_page=
 
 type ReleaseClient struct {
 	HTTPClient *http.Client
+	URL        string // Optional release endpoint for tests.
 }
 
 type Release struct {
@@ -42,26 +43,44 @@ func (c ReleaseClient) Releases(ctx context.Context) ([]Release, error) {
 		client = &http.Client{Timeout: 30 * time.Second}
 	}
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, releasesURL, nil)
-	if err != nil {
-		return nil, err
+	endpoint := c.URL
+	if endpoint == "" {
+		endpoint = releasesURL
 	}
-	req.Header.Set("Accept", "application/vnd.github+json")
-	req.Header.Set("User-Agent", "herdlite")
-
-	resp, err := client.Do(req)
-	if err != nil {
-		return nil, err
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return nil, fmt.Errorf("github releases request failed: %s", resp.Status)
-	}
-
 	var raw []githubRelease
-	if err := json.NewDecoder(resp.Body).Decode(&raw); err != nil {
-		return nil, err
+	// Follow every page: an installed older minor may no longer be on page one.
+	for page := 1; ; page++ {
+		separator := "?"
+		if strings.Contains(endpoint, "?") {
+			separator = "&"
+		}
+		req, err := http.NewRequestWithContext(ctx, http.MethodGet, fmt.Sprintf("%s%spage=%d", endpoint, separator, page), nil)
+		if err != nil {
+			return nil, err
+		}
+		req.Header.Set("Accept", "application/vnd.github+json")
+		req.Header.Set("User-Agent", "herdlite")
+		resp, err := client.Do(req)
+		if err != nil {
+			return nil, err
+		}
+		if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+			resp.Body.Close()
+			return nil, fmt.Errorf("github releases request failed: %s", resp.Status)
+		}
+		var batch []githubRelease
+		err = json.NewDecoder(resp.Body).Decode(&batch)
+		resp.Body.Close()
+		if err != nil {
+			return nil, err
+		}
+		raw = append(raw, batch...)
+		if !strings.Contains(resp.Header.Get("Link"), `rel="next"`) {
+			break
+		}
+		if page >= 100 {
+			return nil, fmt.Errorf("release pagination exceeded 100 pages")
+		}
 	}
 
 	releases := make([]Release, 0, len(raw))

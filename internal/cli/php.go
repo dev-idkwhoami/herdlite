@@ -18,7 +18,24 @@ func runPHP(a *app.App, args []string) int {
 		return 0
 	}
 
+	if phpCommandMutates(args) {
+		release, err := phpmanager.LockChanges(a.Paths)
+		if err != nil {
+			fmt.Fprintln(a.Err, err)
+			return 1
+		}
+		defer release()
+	}
+
 	switch args[0] {
+	case "lock", "unlock":
+		return runPHPLock(a, args[1:], args[0] == "lock")
+	case "remove":
+		return runPHPRemove(a, args[1:])
+	case "update", "upgrade":
+		return runPHPUpdate(a, args[1:])
+	case "extensions":
+		return runPHPExtensions(a, args[1:])
 	case "available":
 		return runPHPAvailable(a, args[1:])
 	case "eol":
@@ -44,6 +61,13 @@ func printPHPHelp(a *app.App) {
 	fmt.Fprintln(a.Out, "  herdlite php eol sync")
 	fmt.Fprintln(a.Out, "  herdlite php install [latest|8.5|8.5.6] [--dry-run] [--force] [--keep-build] [--verbose]")
 	fmt.Fprintln(a.Out, "  herdlite php list")
+	fmt.Fprintln(a.Out, "  herdlite php remove <exact-version>")
+	fmt.Fprintln(a.Out, "  herdlite php lock <exact-version>")
+	fmt.Fprintln(a.Out, "  herdlite php unlock <exact-version>")
+	fmt.Fprintln(a.Out, "  herdlite php update [minor] [--dry-run] [--force] [--keep-build] [--verbose]")
+	fmt.Fprintln(a.Out, "  herdlite php extensions sync <version> [--dry-run]")
+	fmt.Fprintln(a.Out, "  herdlite php extensions open")
+	fmt.Fprintln(a.Out, "  herdlite php extensions list")
 	fmt.Fprintln(a.Out, "  herdlite php global <version>")
 	fmt.Fprintln(a.Out, "  herdlite php use <version> [--p <path|name|domain>]")
 }
@@ -197,13 +221,18 @@ func runPHPList(a *app.App, args []string) int {
 
 	eol, _ := a.Store.PHPEOLMap()
 	w := tabwriter.NewWriter(a.Out, 0, 0, 2, ' ', 0)
-	fmt.Fprintln(w, "VERSION\tMINOR\tSTATUS\tSOURCE\tPREFIX")
+	fmt.Fprintln(w, "VERSION\tMINOR\tSTATUS\tLOCKED\tSOURCE\tPREFIX")
 	for _, runtime := range runtimes {
 		status := "supported"
 		if branch, ok := eol[runtime.Minor]; ok {
 			status = phpEOLStatus(branch)
 		}
-		fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\n", runtime.Version, runtime.Minor, status, runtime.Source, runtime.Prefix)
+		locked, err := a.Store.PHPLocked(runtime.Version)
+		if err != nil {
+			fmt.Fprintf(a.Err, "php list: %v\n", err)
+			return 1
+		}
+		fmt.Fprintf(w, "%s\t%s\t%s\t%t\t%s\t%s\n", runtime.Version, runtime.Minor, status, locked, runtime.Source, runtime.Prefix)
 	}
 	w.Flush()
 	return 0
@@ -304,4 +333,19 @@ func runPHPGlobal(a *app.App, args []string) int {
 	}
 	fmt.Fprintf(a.Out, "Global PHP set to %s\n", runtime.Version)
 	return 0
+}
+
+func phpCommandMutates(args []string) bool {
+	for _, arg := range args {
+		if arg == "--dry-run" {
+			return false
+		}
+	}
+	switch args[0] {
+	case "install", "update", "remove", "lock", "unlock", "use", "global":
+		return true
+	case "extensions":
+		return len(args) > 1 && (args[1] == "sync" || args[1] == "open")
+	}
+	return false
 }

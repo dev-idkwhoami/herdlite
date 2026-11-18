@@ -10,11 +10,13 @@ import (
 
 func runComposer(a *app.App, args []string) int {
 	if len(args) == 0 || hasHelp(args) {
-		fmt.Fprintln(a.Out, "Usage: herdlite composer <install|path>")
+		fmt.Fprintln(a.Out, "Usage: herdlite composer <install|update|upgrade|path>")
 		return 0
 	}
 
 	switch args[0] {
+	case "update", "upgrade":
+		return componentUpdate("composer")(a, args)
 	case "install":
 		return runComposerInstall(a, args[1:])
 	case "path":

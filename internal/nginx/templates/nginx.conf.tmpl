@@ -17,6 +17,8 @@ http {
 
     client_body_temp_path {{TEMP_DIR}}/client-body;
     proxy_temp_path {{TEMP_DIR}}/proxy;
+    fastcgi_buffer_size 16k;
+    fastcgi_busy_buffers_size 16k;
     fastcgi_temp_path {{TEMP_DIR}}/fastcgi;
     uwsgi_temp_path {{TEMP_DIR}}/uwsgi;
     scgi_temp_path {{TEMP_DIR}}/scgi;

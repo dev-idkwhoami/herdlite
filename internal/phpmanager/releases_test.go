@@ -1,6 +1,10 @@
 package phpmanager
 
 import (
+	"context"
+	"io"
+	"net/http"
+	"strings"
 	"testing"
 	"time"
 )
@@ -52,3 +56,33 @@ func TestLatestByMinor(t *testing.T) {
 		t.Fatalf("expected newest 8.4 patch, got %s", got[1].Version)
 	}
 }
+
+func TestReleasePaginationIncludesOlderMinors(t *testing.T) {
+	calls := 0
+	client := ReleaseClient{HTTPClient: &http.Client{Transport: releaseTransport(func(req *http.Request) (*http.Response, error) {
+		calls++
+		header := http.Header{}
+		body := `[{"tag_name":"php-8.5.12"},{"tag_name":"php-8.6.0RC1","prerelease":true}]`
+		if req.URL.Query().Get("page") == "1" {
+			header.Set("Link", `<https://api.github.com/next>; rel="next"`)
+		} else {
+			body = `[{"tag_name":"php-8.3.30"}]`
+		}
+		return &http.Response{StatusCode: 200, Header: header, Body: io.NopCloser(strings.NewReader(body))}, nil
+	})}}
+	releases, err := client.Releases(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if calls != 2 || len(releases) != 2 {
+		t.Fatalf("pagination: %d calls, %+v", calls, releases)
+	}
+	release, err := ResolveRelease(releases, "8.3")
+	if err != nil || release.Version != "8.3.30" {
+		t.Fatal(release, err)
+	}
+}
+
+type releaseTransport func(*http.Request) (*http.Response, error)
+
+func (f releaseTransport) RoundTrip(r *http.Request) (*http.Response, error) { return f(r) }

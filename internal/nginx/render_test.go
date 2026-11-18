@@ -35,6 +35,12 @@ func TestWriteBaseConfig(t *testing.T) {
 	if !strings.Contains(content, "client_body_temp_path "+filepath.Join(root, "nginx", "temp", "client-body")+";") {
 		t.Fatalf("expected user-owned nginx temp path in config, got:\n%s", content)
 	}
+	if !strings.Contains(content, "fastcgi_buffer_size 16k;") {
+		t.Fatalf("expected global FastCGI response header buffer size in config, got:\n%s", content)
+	}
+	if !strings.Contains(content, "fastcgi_busy_buffers_size 16k;") {
+		t.Fatalf("expected compatible global FastCGI busy buffer size in config, got:\n%s", content)
+	}
 }
 
 func TestWriteSiteConfig(t *testing.T) {

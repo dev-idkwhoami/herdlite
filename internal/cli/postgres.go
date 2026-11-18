@@ -10,12 +10,14 @@ import (
 
 func runPostgres(a *app.App, args []string) int {
 	if len(args) == 0 || hasHelp(args) {
-		fmt.Fprintln(a.Out, "Usage: herdlite postgres <init|start|stop|status|logs>")
+		fmt.Fprintln(a.Out, "Usage: herdlite postgres <init|start|stop|status|logs|update|upgrade>")
 		return 0
 	}
 
 	manager := postgres.Manager{Paths: a.Paths, Out: a.Out}
 	switch args[0] {
+	case "update", "upgrade":
+		return componentUpdate("postgres")(a, args)
 	case "init":
 		if err := a.InitUserDirs(); err != nil {
 			fmt.Fprintf(a.Err, "postgres init: %v\n", err)

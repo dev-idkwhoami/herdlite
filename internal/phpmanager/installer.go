@@ -28,17 +28,28 @@ type InstallOptions struct {
 	Force     bool
 	KeepBuild bool
 	Verbose   bool
+	// Internal update hooks keep registration separate from building.
+	Release       *Release
+	DeferRegister bool
+	Configure     func(state.PHPRuntime) error
 }
 
 func (i Installer) Install(ctx context.Context, opts InstallOptions) (state.PHPRuntime, error) {
-	releases, err := (ReleaseClient{}).Releases(ctx)
-	if err != nil {
+	if _, err := i.extensionConfig("", true); err != nil {
 		return state.PHPRuntime{}, err
 	}
-
-	release, err := ResolveRelease(releases, opts.Requested)
-	if err != nil {
-		return state.PHPRuntime{}, err
+	var release Release
+	if opts.Release != nil {
+		release = *opts.Release
+	} else {
+		releases, err := (ReleaseClient{}).Releases(ctx)
+		if err != nil {
+			return state.PHPRuntime{}, err
+		}
+		release, err = ResolveRelease(releases, opts.Requested)
+		if err != nil {
+			return state.PHPRuntime{}, err
+		}
 	}
 
 	prefix := filepath.Join(i.Paths.PHPDir, release.Version)
@@ -51,14 +62,20 @@ func (i Installer) Install(ctx context.Context, opts InstallOptions) (state.PHPR
 	i.printf("Download: %s\n", release.TarballURL)
 
 	if opts.DryRun {
+		if err := i.SyncExtensions(ctx, runtime, true); err != nil {
+			return state.PHPRuntime{}, err
+		}
 		i.printf("Dry run only; PHP was not downloaded or built.\n")
 		return runtimeRecord(release, prefix), nil
 	}
 
 	if !opts.Force {
-		if err := ValidateRuntime(runtime); err == nil {
+		if err := ValidateRuntimeContext(ctx, runtime); err == nil {
 			i.printf("PHP %s is already installed and valid; skipping build.\n", runtime.Version)
-			if err := i.Store.UpsertPHPRuntime(runtime); err != nil {
+			if err := i.SyncExtensions(ctx, runtime, false); err != nil {
+				return state.PHPRuntime{}, err
+			}
+			if err := i.register(runtime, opts.DeferRegister); err != nil {
 				return state.PHPRuntime{}, err
 			}
 			return runtime, nil
@@ -93,18 +110,26 @@ func (i Installer) Install(ctx context.Context, opts InstallOptions) (state.PHPR
 		return state.PHPRuntime{}, err
 	}
 
-	if err := i.build(sourceDir, prefix, opts.Verbose); err != nil {
+	if err := i.build(ctx, sourceDir, prefix, opts.Verbose); err != nil {
 		return state.PHPRuntime{}, err
 	}
 	if _, err := RenderConfigForPaths(prefix, i.Paths); err != nil {
 		return state.PHPRuntime{}, fmt.Errorf("render PHP config: %w", err)
 	}
 
-	if err := ValidateRuntime(runtime); err != nil {
+	if opts.Configure != nil {
+		if err := opts.Configure(runtime); err != nil {
+			return state.PHPRuntime{}, err
+		}
+	}
+	if err := i.SyncExtensions(ctx, runtime, false); err != nil {
+		return state.PHPRuntime{}, err
+	}
+	if err := ValidateRuntimeContext(ctx, runtime); err != nil {
 		return state.PHPRuntime{}, fmt.Errorf("validate PHP runtime: %w", err)
 	}
 
-	if err := i.Store.UpsertPHPRuntime(runtime); err != nil {
+	if err := i.register(runtime, opts.DeferRegister); err != nil {
 		return state.PHPRuntime{}, err
 	}
 
@@ -130,9 +155,9 @@ func (opts InstallOptions) RequestedOrLatest() string {
 	return opts.Requested
 }
 
-func (i Installer) build(sourceDir string, prefix string, verbose bool) error {
+func (i Installer) build(ctx context.Context, sourceDir string, prefix string, verbose bool) error {
 	if _, err := os.Stat(filepath.Join(sourceDir, "configure")); os.IsNotExist(err) {
-		if err := i.run(sourceDir, verbose, "./buildconf", "--force"); err != nil {
+		if err := i.run(ctx, sourceDir, verbose, "./buildconf", "--force"); err != nil {
 			return err
 		}
 	}
@@ -168,27 +193,28 @@ func (i Installer) build(sourceDir string, prefix string, verbose bool) error {
 		"--with-sqlite3",
 	}
 
-	if err := i.run(sourceDir, verbose, "./configure", configureArgs...); err != nil {
+	if err := i.run(ctx, sourceDir, verbose, "./configure", configureArgs...); err != nil {
 		return err
 	}
-	if err := i.run(sourceDir, verbose, "make", "-j"+fmt.Sprint(runtime.NumCPU())); err != nil {
+	if err := i.run(ctx, sourceDir, verbose, "make", "-j"+fmt.Sprint(runtime.NumCPU())); err != nil {
 		return err
 	}
-	if err := i.run(sourceDir, verbose, "make", "install"); err != nil {
+	if err := i.run(ctx, sourceDir, verbose, "make", "install"); err != nil {
 		return err
 	}
 
 	return nil
 }
 
-func (i Installer) run(dir string, verbose bool, name string, args ...string) error {
-	logPath := filepath.Join(i.Paths.LogDir, "php-build-"+safeLogName(name)+".log")
+func (i Installer) run(ctx context.Context, dir string, verbose bool, name string, args ...string) error {
+	logPath := filepath.Join(i.Paths.LogDir, "php-build-"+safeLogName(dir)+"-"+safeLogName(name)+"-"+time.Now().Format("20060102-150405.000000000")+".log")
 	i.printf("Running: %s %v\n", name, args)
 	if !verbose {
 		i.printf("  log: %s\n", logPath)
 	}
 	start := time.Now()
-	cmd := exec.Command(name, args...)
+	cmd := exec.CommandContext(ctx, name, args...)
+	configureBuildCancellation(cmd)
 	cmd.Dir = dir
 
 	var logFile *os.File
@@ -277,4 +303,11 @@ func (i Installer) printf(format string, args ...any) {
 		return
 	}
 	fmt.Fprintf(i.Out, format, args...)
+}
+
+func (i Installer) register(runtime state.PHPRuntime, deferRegister bool) error {
+	if deferRegister {
+		return nil
+	}
+	return i.Store.UpsertPHPRuntime(runtime)
 }

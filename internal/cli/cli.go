@@ -58,6 +58,12 @@ func Run(args []string) int {
 
 func allCommands() []command {
 	return []command{
+		{Name: "update", Usage: "herdlite update [component] [--dry-run]", Description: "update installed Herdlite components", Run: runUpdate},
+		{Name: "upgrade", Usage: "herdlite upgrade [component] [--dry-run]", Description: "alias for update", Advanced: true, Run: runUpdate},
+		{Name: "nginx", Usage: "herdlite nginx update [--dry-run]", Description: "update nginx and required dependencies", Advanced: true, Run: componentUpdate("nginx")},
+		{Name: "dns", Usage: "herdlite dns update [--dry-run]", Description: "update dnsmasq", Advanced: true, Run: componentUpdate("dns")},
+		{Name: "system", Usage: "herdlite system update [--dry-run]", Description: "update installed Herdlite system dependencies", Advanced: true, Run: componentUpdate("system")},
+		{Name: "self", Usage: "herdlite self update [--dry-run]", Description: "update Herdlite itself", Advanced: true, Run: componentUpdate("self")},
 		{
 			Name:        "install",
 			Usage:       "herdlite install [--dry-run]",
@@ -177,28 +183,28 @@ func allCommands() []command {
 		},
 		{
 			Name:        "php",
-			Usage:       "herdlite php <available|install|list>",
+			Usage:       "herdlite php <available|install|update|upgrade|remove|lock|unlock|list|extensions|global|use>",
 			Description: "manage Herdlite-built PHP runtimes",
 			Advanced:    true,
 			Run:         runPHP,
 		},
 		{
 			Name:        "composer",
-			Usage:       "herdlite composer <install|path>",
+			Usage:       "herdlite composer <install|update|upgrade|path>",
 			Description: "manage Herdlite Composer",
 			Advanced:    true,
 			Run:         runComposer,
 		},
 		{
 			Name:        "node",
-			Usage:       "herdlite node global <version>",
+			Usage:       "herdlite node <global|update|upgrade>",
 			Description: "manage global Node default",
 			Advanced:    true,
 			Run:         runNode,
 		},
 		{
 			Name:        "postgres",
-			Usage:       "herdlite postgres <init|start|stop|status>",
+			Usage:       "herdlite postgres <init|start|stop|status|update|upgrade>",
 			Description: "manage Herdlite PostgreSQL",
 			Advanced:    true,
 			Run:         runPostgres,

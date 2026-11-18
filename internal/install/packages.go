@@ -136,3 +136,8 @@ func (p PackageInstaller) confirm(question string) bool {
 	answer := strings.ToLower(strings.TrimSpace(scanner.Text()))
 	return answer == "y" || answer == "yes"
 }
+
+// RequiredPackages returns the system dependencies shared by installation and updates.
+func RequiredPackages() []string {
+	return append([]string(nil), pacmanPackages...)
+}

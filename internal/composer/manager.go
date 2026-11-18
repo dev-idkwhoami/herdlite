@@ -33,16 +33,29 @@ func (m Manager) Install(ctx context.Context, runtime state.PHPRuntime, dryRun b
 	if err := os.MkdirAll(filepath.Dir(destination), 0o755); err != nil {
 		return err
 	}
-	if err := download(ctx, pharURL, destination); err != nil {
+	temp, err := os.CreateTemp(filepath.Dir(destination), ".composer-update-*")
+	if err != nil {
 		return err
 	}
-	if err := os.Chmod(destination, 0o755); err != nil {
+	staged := temp.Name()
+	if err := temp.Close(); err != nil {
+		os.Remove(staged)
 		return err
 	}
-	cmd := exec.CommandContext(ctx, runtime.PHPBinary, destination, "--version")
+	defer os.Remove(staged)
+	if err := download(ctx, pharURL, staged); err != nil {
+		return err
+	}
+	if err := os.Chmod(staged, 0o755); err != nil {
+		return err
+	}
+	cmd := exec.CommandContext(ctx, runtime.PHPBinary, staged, "--version")
 	cmd.Stdout = m.Out
 	cmd.Stderr = m.Out
-	return cmd.Run()
+	if err := cmd.Run(); err != nil {
+		return err
+	}
+	return os.Rename(staged, destination)
 }
 
 func (m Manager) Exists() bool {
